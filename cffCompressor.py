@@ -3,10 +3,10 @@
 """Tool to subroutinize a CFF table"""
 
 import argparse
+# import numpy as np
 from fontTools.ttLib import TTFont
-from psCharStrings import T2CharString, t2Operators
 
-OP_MAP = dict((k, v) for (v, k) in t2Operators)
+# OP_MAP = dict((k, v) for (v, k) in t2Operators)
 
 S_TYPE = True
 L_TYPE = False
@@ -94,7 +94,7 @@ def get_suffix_array(chstrings):
     buckets = [-1] * k
 
     sorted_lms = induce_sort_lms(chstrings, suf_arr, t, buckets, k)
-    print(sorted_lms) # XXX PRINT ANSWER for now
+    print(sorted_lms[:10]) # XXX PRINT ANSWER for now
 
 def mark_buckets(chstrings, buckets, k, ends=False, counts=None):
     """
@@ -153,6 +153,7 @@ def induce_sort_lms(chstrings, suf_arr, t, buckets, k):
     # find lms_strings by looping through type array
     lms_strings = []
     is_lms = [] # mirrors chstrings for determinging whether a char is LMS
+    #TODO: use numpy for above
     for chidx, chstr_row in enumerate(t):
         is_lms.append([False])
         for idx in range(1, len(chstr_row)):
@@ -172,7 +173,7 @@ def induce_sort_lms(chstrings, suf_arr, t, buckets, k):
         suf_arr[buckets[chstrings[chidx][i]]] = (chidx, i)
         buckets[chstrings[chidx][i]] -= 1
 
-    
+    # import pdb; pdb.set_trace()
     # put L-type prefixes into suf_arr in sorted order
     # inducing from the LMS-prefixes
     mark_buckets(chstrings, buckets, k)
@@ -191,7 +192,7 @@ def induce_sort_lms(chstrings, suf_arr, t, buckets, k):
                 suf_arr[buckets[other]] = (chidx, i - 1)
                 buckets[other] += 1
         elif i == 0 and chidx > 0:
-            last_pos = len(chstrings[chidx - 1])
+            last_pos = len(chstrings[chidx - 1]) - 1
             if t[chidx - 1][-1] == L_TYPE: # if other is l-type
                 other = chstrings[chidx - 1][-1]
                 suf_arr[buckets[other]] = (chidx - 1, last_pos)
@@ -207,7 +208,7 @@ def induce_sort_lms(chstrings, suf_arr, t, buckets, k):
                 suf_arr[buckets[other]] = (chidx, i - 1)
                 buckets[other] -= 1
         elif i == 0 and chidx > 0:
-            last_pos = len(chstrings[chidx - 1])
+            last_pos = len(chstrings[chidx - 1]) - 1
             if t[chidx - 1][-1] == S_TYPE: # if other is l-type
                 other = chstrings[chidx - 1][-1]
                 suf_arr[buckets[other]] = (chidx - 1, last_pos)
@@ -373,14 +374,30 @@ def simple_find_subrs(font):
 # ---------------------------
 
 
+def _test():
+    """
+    >>> from testData import *
+    >>> induce_sort_lms(chstrings, suf_arr, t, buckets, k)
+    [(1, 5), (1, 1), (0, 2)]
+    >>> induce_sort_lms(chstrings2, suf_arr, t2, buckets, k)
+    [(0, 10), (0, 6), (0, 2)]
+    """
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Subroutinize a font.')
     parser.add_argument('filename', help='Where to find the font')
+    parser.add_argument('-t', required=False, action='store_true',
+                        dest='test', default=False)
+    parser.add_argument('-v', required=False, action='store_true',
+                        dest='verbose_test', default=False)
 
     args = parser.parse_args()
     font = TTFont(args.filename)
+
+    if args.test:
+        import doctest
+        doctest.testmod(verbose=args.verbose_test)
 
     # simple_subrs = simple_find_subrs(font)
     # print('Simple answer:')
