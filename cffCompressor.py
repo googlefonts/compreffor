@@ -59,12 +59,13 @@ class CharSubStringSet(object):
         """Return the size (in bytes) that the bytecode for this takes up"""
         global REV_KEYMAP
         try:
-            return sum([tokenCost(REV_KEYMAP[token]) for token in self.value()])
+            if not hasattr(self, '__cost'):
+                self.__cost = sum([tokenCost(REV_KEYMAP[token]) for token in self.value()])
+            return self.__cost
         except:
-            raise
             raise Exception('Translated token not recognized') 
 
-    def subr_saving(self, call_cost=2, subr_overhead=3):
+    def subr_saving(self, call_cost=5, subr_overhead=3):
         """
         Return the savings that will be realized by subroutinizing
         this substring.
