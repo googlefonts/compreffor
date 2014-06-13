@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+
+*.DS_Store
+
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+pip-log.txt
+pip-delete-this-directory.txt
+
