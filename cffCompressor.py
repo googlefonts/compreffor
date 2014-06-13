@@ -5,11 +5,15 @@
 import argparse
 # import numpy as np
 from fontTools.ttLib import TTFont
+from fontTools.misc import psCharStrings
 
 # OP_MAP = dict((k, v) for (v, k) in t2Operators)
 
 S_TYPE = True
 L_TYPE = False
+
+KEYMAP = None
+REV_KEYMAP = None
 
 class CharSubStringSet(object):
     """
@@ -19,8 +23,9 @@ class CharSubStringSet(object):
     length = None # length of substring
     locations = None # list tuples of form (glyph_idx, start_pos)
     freq = None # number of times it appears
+    chstrings = None # chstrings from whence this substring came
 
-    def __init__(self, length=None, locs=None):
+    def __init__(self, length=None, locs=None, chstrings=None):
         if length == None:
             self.length = 0
         else:
@@ -33,13 +38,15 @@ class CharSubStringSet(object):
             self.locations = locs
             self.freq = len(locs)
 
+        self.chstrings = chstrings
+
     def __len__(self):
         return self.length
 
-    def value(self, chstrings):
+    def value(self):
         """Returns the actual substring"""
         try:
-            return chstrings[self.locations[0][0]][self.locations[0][1]:self.length]
+            return self.chstrings[self.locations[0][0]][self.locations[0][1]:self.length]
         except IndexError: # there are no locations
             return None
 
@@ -49,10 +56,15 @@ class CharSubStringSet(object):
         self.freq += 1
 
     def cost(self):
-        """Return the size that the bytecode for this takes up"""
-        return len(self)
+        """Return the size (in bytes) that the bytecode for this takes up"""
+        global REV_KEYMAP
+        try:
+            return sum([tokenCost(REV_KEYMAP[token]) for token in self.value()])
+        except:
+            raise
+            raise Exception('Translated token not recognized') 
 
-    def subr_saving(self, call_cost=2, subr_overhead=2):
+    def subr_saving(self, call_cost=2, subr_overhead=3):
         """
         Return the savings that will be realized by subroutinizing
         this substring.
@@ -61,14 +73,30 @@ class CharSubStringSet(object):
         call_cost -- the cost to call a subroutine
         subr_overhead -- the cost to define a subroutine
         """
-
-        return (  self.cost() * self.freq
-                - self.cost() # include cost of subroutine
-                - call_cost * self.freq # include cost of calling
-                - subr_overhead) # include cost of subr definition
+        #TODO:
+        # - If substring ends in "endchar", we need no "return"
+        #   added and as such subr_overhead will be one byte
+        #   smaller.
+        return (  self.cost() * self.freq # avoided copies
+                - self.cost() # cost of subroutine body
+                - call_cost * self.freq # cost of calling
+                - subr_overhead) # cost of subr definition
 
     def __repr__(self):
         return "<SubStringSet: %d x %d>" % (self.length, self.freq)
+
+def tokenCost(token):
+    """Calculate the bytecode size of a T2 Charstring token"""
+    tp = type(token)
+    if issubclass(tp, basestring):
+        if token[:8] in ('hintmask', 'cntrmask'):
+            return 1 + len(token[8:])
+        return len(psCharStrings.T2CharString.opcodes[token])
+    elif tp == int:
+        return len(psCharStrings.encodeIntT2(token))
+    elif tp == float:
+        return len(psCharStrings.encodeFixed(token))
+    assert 0
 
 def get_suffix_array(chstrings):
     """Generate the sorted suffix array for `chstrings`."""
@@ -234,43 +262,57 @@ def induce_sort_lms(chstrings, suf_arr, t, buckets, k):
     
     return lms_strings
 
-    
 def find_subrs(font):
+    glyph_set = font.getGlyphSet()
+    return find_subrs_from_gs(glyph_set)
+    
+def find_subrs_from_gs(glyph_set):
     """
     Find subroutines using Suffix Arrays.
 
     Returns: nothing for now
     """
-    # 2-level array of charstrings:
+    # chstrings is a 2-level array of charstrings:
     #   The first level separates by glyph
     #   The second level separates by token
     #       in a glyph's charstring 
-    chstrings = []
+    chstrings = process_chstrings(glyph_set)
 
-    glyph_set = font.getGlyphSet()
+    suf_arr = get_suffix_array(chstrings)
+
+def process_chstrings(glyph_set):
+    chstrings = []
     glyph_set_keys = glyph_set.keys()
 
-    keymap = {} # maps charstring tokens -> simple integer alphabet
-    rev_keymap = [] # reversed keymap
+    global KEYMAP, REV_KEYMAP
+    KEYMAP = {} # maps charstring tokens -> simple integer alphabet
+    REV_KEYMAP = [] # reversed keymap
+    #TODO: make above a numpy array
     next_key = 0
 
     for k in glyph_set_keys:
         char_string = glyph_set[k]
         char_string.decompile()
         program = []
-        for tok in char_string.program:
-            if not tok in keymap:
-                keymap[tok] = next_key
-                rev_keymap.append(tok)
+        piter = iter(enumerate(char_string.program))
+        for i, tok in piter:
+            assert tok not in ("callsubr", "callgsubr", "return", "endchar") \
+                    or tok == "endchar" and i == len(char_string.program) - 1
+            if tok in ("hintmask", "cntrmask"):
+                # Attach next token to this, as a subroutine
+                # call cannot be placed between this token and
+                # the following.
+                _, tokennext = next(piter)
+                token = '%s %s' % (token, tokennext)
+            if not tok in KEYMAP:
+                KEYMAP[tok] = next_key
+                REV_KEYMAP.append(tok)
                 next_key += 1
-            program.append(keymap[tok])
+            program.append(KEYMAP[tok])
 
         chstrings.append(tuple(program))
 
-    suf_arr = get_suffix_array(chstrings)
-
-
-
+    return chstrings
 
 
 # BASIC VERSION:
@@ -381,6 +423,8 @@ def _test():
     [(1, 5), (1, 1), (0, 2)]
     >>> induce_sort_lms(chstrings2, suf_arr, t2, buckets, k)
     [(0, 10), (0, 6), (0, 2)]
+
+    # test CharSubStringSet.cost() somehow!
     """
 
 
