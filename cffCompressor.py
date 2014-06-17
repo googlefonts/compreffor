@@ -124,7 +124,7 @@ class CharSubStringSet(object):
     def __repr__(self):
         return "<SubStringSet: %d x %d>" % (self.length, self.freq)
 
-class SuffixArrayBuilder(object):
+class SubstringFinder(object):
     """Builds a sorted suffix array from a glyph set"""
 
     suffixes = None
@@ -222,7 +222,7 @@ class SuffixArrayBuilder(object):
         start_indices = []
         self.substrings = []
         previous = ()
-
+        import pdb; pdb.set_trace()
         for i, (glyph_idx, tok_idx) in enumerate(self.suffixes):
             current = self.data[glyph_idx][tok_idx:]
 
@@ -241,22 +241,26 @@ class SuffixArrayBuilder(object):
             # First min_l items are still the same.
 
             # Pop the rest from previous and account for.
+            #TODO: don't allow overlapping substrings into the same set
             for l in range(min_l, len(previous)):
                 freq = i - start_indices[l]
                 if freq < min_freq:
+                    print 'Freq reject: ', previous[:l]
                     break
                 if branching and l + 1 < len(previous) and freq == i - start_indices[l+1]:
                     # This substring is redundant since the substring
                     # one longer has the same frequency.  Ie., this one
                     # is not "branching".
                     continue
-                substr = CharSubStringSet(l, 
+                substr = CharSubStringSet(l + 1, 
                                           [self.suffixes[j] for j 
                                               in range(start_indices[l], i)],
                                           self.data,
                                           self.rev_keymap)
                 if substr.subr_saving() > 0:
                     self.substrings.append(substr)
+                else:
+                    print 'Savings reject: ', current[:l]
 
             previous = current
             start_indices = start_indices[:min_l]
@@ -270,155 +274,15 @@ class SuffixArrayBuilder(object):
         print("Took %gs" % (time.time() - start_time))
         return self.substrings
 
-    def radix_get_sorted(self):
-        """Take the input stream of data (integers) and returns the sorted
-        suffix array (storing it in self.suffixes)"""
 
-        if self._completed:
-            return self.suffixes
-
-        # see Rajasekaran et al for explanation of below:
-        # d = 3 * math.log(self.length, self.alphabet_size)
-        d = SORT_DEPTH
-        radix_sort_suffixes(d, 0, self.length)
-
-        touches = [0 for _ in xrange(self.length)]
-        cur_sort = [d for _ in xrange(self.length)]
-        skipped = True # dummy value
-
-        while skipped:
-            for i in xrange(len(touches)):
-                touches[i] = 0
-            skipped = False
-
-            for glyph_idx in reversed(self.data):
-                for tok_idx in reversed(self.data[glyph_idx]):
-                    b = self.bucket_for[glyph_idx][tok_idx]
-                    
-                    for i in range(*b):
-                        if touches[i] > MAX_TOUCHES:
-                            skipped = False
-                            break
-                    if skipped:
-                        continue
-
-                    if b[1] - b[0] > 1:
-                        # handle sorting of this bucket
-                        radix_sort_suffixes(d, b[0], b[1], touches[b[0]] * d, (glyph_idx, tok_idx+1))
-
-                        for i in range(*b):
-                            touches[i] += 1
-
-        self._completed = True
-        return self.suffixes
-
-    def radix_sort_suffixes(self, distance, start, end, offset=0, correct_at=None):
-        """Perform a radix sort on `suffixes`, which refers to indices
-        of `input`. Sort to the first `distance` terms starting from 
-        `offset`. Store the bucket of suffix i in `self.bucket_start[i]`.
-        Return the bucket start locations."""
-        import time
-        total_start = time.time()
-
-
-        length = end - start
-        if length < TIMSORT_THRESHOLD:
-            # just do a regular sort, keying on the actual suffix
-            self.suffixes[start:end] = sorted(self.suffixes[start:end],
-                                              key=lambda x: self.data[x[0]][x[1]:])
-        else:
-            # perform a radix sort on the first `distance` tokens
-
-            def get_tok_for(glyph_idx, tok_idx, i):
-                if tok_idx + i + offset < len(self.data[glyph_idx]):
-                    return self.data[glyph_idx][tok_idx + i + offset]
-                else:
-                    return None
-            print("Making buckets and final"); start_time = time.time()
-            buckets = [0 for _ in xrange(self.alphabet_size + 1)]
-            final = [None for _ in range(length)]
-            print("Took %gs" % (time.time() - start_time));
-            for i in reversed(range(distance)):
-                print(i)
-                real_start = start
-                # use buckets to store bucket sizes (space optimization)
-                print("Making counts"); start_time = time.time()
-                for key in range(self.alphabet_size):
-                    buckets[key] = 0
-                for pos in range(length):
-                    glyph_idx, tok_idx = self.suffixes[start + pos]
-                    tok = get_tok_for(glyph_idx, tok_idx, i)
-                    if tok != None:
-                        buckets[tok] += 1
-                    else:
-                        # this is possibly broken
-                        tmp = self.suffixes[real_start]
-                        self.suffixes[real_start] = self.suffixes[start + pos]
-                        self.suffixes[start + pos] = tmp
-                        real_start += 1
-                print("Took %gs" % (time.time() - start_time))
-                # find bucket starts
-                print("Find bucket starts"); start_time = time.time()
-                cur_sum = 0
-                for key in range(self.alphabet_size):
-                    cur_sum += buckets[key]
-                    buckets[key] = cur_sum - buckets[key]
-                buckets[-1] = cur_sum
-                bucket_names = buckets[:] # store original starts as names
-                print("Took %gs" % (time.time() - start_time))
-
-                for pos in range(len(final)):
-                    final[pos] = (-1, -1)
-
-                print("Bucket assigment"); start_time = time.time()
-                cur_bucket = None
-                for pos in range(end - real_start):
-                    glyph_idx, tok_idx = self.suffixes[real_start + pos]
-                    tok = get_tok_for(glyph_idx, tok_idx, i)
-                    if self.bucket_for[glyph_idx][tok_idx] and \
-                       self.bucket_for[glyph_idx][tok_idx][0] != cur_bucket:
-                        # for b in zip(bucket_names, buckets):
-                        #     print(b)
-                        #     for j in range(*b):
-                        #         glidx, tidx = self.suffixes[real_start + j]
-                        #         self.bucket_for[glidx][tidx][1] = b[1]
-                        bucket_names = buckets[:] # reset bucket names
-                        cur_bucket = self.bucket_for[glyph_idx][tok_idx]
-                    dest = buckets[tok]
-                    final[dest] = (glyph_idx, tok_idx)
-                    buckets[tok] += 1
-                    self.bucket_for[glyph_idx][tok_idx] = \
-                        [bucket_names[tok] + real_start, -1]
-                print("Took %gs" % (time.time() - start_time))
-                # for b in zip(bucket_names, buckets):
-                #     print(b)
-                #     for j in range(*b):
-                #         glidx, tidx = self.suffixes[real_start + j]
-                #         self.bucket_for[glidx][tidx][1] = b[1]
-                print("Copying in"); start_time = time.time()
-                self.suffixes[real_start:end] = final[:end-(real_start-start)]
-                print("Took %gs" % (time.time() - start_time))
-
-            # figure out bucket endpoints
-            print("Figuring endpoints"); start_time = time.time()
-            last_end = end
-            for pos in reversed(range(start, end)):
-                glyph_idx, tok_idx = self.suffixes[pos]
-                self.bucket_for[glyph_idx][tok_idx][1] = last_end
-                if self.bucket_for[glyph_idx][tok_idx][0] == pos:
-                    last_end = pos
-            print("Took %gs" % (time.time() - start_time))
-
-        print("Total took %gs" % (time.time() - total_start))
 
 
 def _test():
     """
     >>> from testData import *
-    >>> sab = SuffixArrayBuilder(DummyGlyphSet({'a': (0, 1, 2), 'b': (1, 0, 0)}))
-    >>> sab.radix_sort_suffixes(4, 0, 6)
-    >>> sab.suffixes
-    [(1, 2), (1, 1), (0, 0), (1, 0), (0, 1), (0, 2)]
+    >>> sf = SubstringFinder(glyph_set)
+    >>> sf.get_suffixes() # doctest: +ELLIPSIS
+    [(0, 0), (1, 1), (0, 1), (0, 2), (1, 0), (1, 2)]
 
 
     # test CharSubStringSet.cost() somehow!
@@ -440,7 +304,7 @@ if __name__ == '__main__':
         import doctest
         doctest.testmod(verbose=args.verbose_test)
 
-    sab = SuffixArrayBuilder(font.getGlyphSet())
+    sab = SubstringFinder(font.getGlyphSet())
     substrings = sab.get_substrings()
     print(len(substrings))
 
