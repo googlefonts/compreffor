@@ -1,3 +1,5 @@
+from testDummy import DummyGlyphSet
+
 chstrings = [(109, 109, 105, 105, 115), (115, 105, 105, 115, 115, 105, 105, 112, 112, 105, 105)]
 suf_arr = [(1, 10), (1, 9), (1, 5), (1, 1), (0, 2), (1, 6), (1, 2), (0, 3), (0, 1), (0, 0), (1, 8), (1, 7), (1, 4), (1, 0), (1, 3), (0, 4)]
 t = [[False, False, True, True, False], [False, True, True, False, False, True, True, False, False, False, False]]
@@ -6,3 +8,5 @@ k = 120
 
 chstrings2 = [chstrings[0] + chstrings[1]]
 t2 = [t[0] + t[1]]
+
+glyph_set = DummyGlyphSet({'a': (1, 2, 3), 'b': (8, 1, 4)})

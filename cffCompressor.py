@@ -2,7 +2,7 @@
 
 """Tool to subroutinize a CFF table"""
 
-import argparse
+import argparse, heapq
 # import numpy as np
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
@@ -12,8 +12,9 @@ from fontTools.misc import psCharStrings
 S_TYPE = True
 L_TYPE = False
 
-KEYMAP = None
-REV_KEYMAP = None
+TIMSORT_THRESHOLD = 300
+MAX_TOUCHES = 3
+SORT_DEPTH = 10
 
 class CharSubStringSet(object):
     """
@@ -24,8 +25,9 @@ class CharSubStringSet(object):
     locations = None # list tuples of form (glyph_idx, start_pos)
     freq = None # number of times it appears
     chstrings = None # chstrings from whence this substring came
+    rev_keymap = None
 
-    def __init__(self, length=None, locs=None, chstrings=None):
+    def __init__(self, length=None, locs=None, chstrings=None, rev_keymap=None):
         if length == None:
             self.length = 0
         else:
@@ -39,6 +41,7 @@ class CharSubStringSet(object):
             self.freq = len(locs)
 
         self.chstrings = chstrings
+        self.rev_keymap = rev_keymap
 
     def __len__(self):
         return self.length
@@ -46,7 +49,7 @@ class CharSubStringSet(object):
     def value(self):
         """Returns the actual substring"""
         try:
-            return self.chstrings[self.locations[0][0]][self.locations[0][1]:self.length]
+            return self.chstrings[self.locations[0][0]][self.locations[0][1]:(self.locations[0][1] + self.length)]
         except IndexError: # there are no locations
             return None
 
@@ -57,10 +60,9 @@ class CharSubStringSet(object):
 
     def cost(self):
         """Return the size (in bytes) that the bytecode for this takes up"""
-        global REV_KEYMAP
         try:
             if not hasattr(self, '__cost'):
-                self.__cost = sum([tokenCost(REV_KEYMAP[token]) for token in self.value()])
+                self.__cost = sum([self.tokenCost(self.rev_keymap[token]) for token in self.value()])
             return self.__cost
         except:
             raise Exception('Translated token not recognized') 
@@ -83,347 +85,341 @@ class CharSubStringSet(object):
                 - call_cost * self.freq # cost of calling
                 - subr_overhead) # cost of subr definition
 
+    @staticmethod
+    def tokenCost(token):
+        """Calculate the bytecode size of a T2 Charstring token"""
+        tp = type(token)
+        if issubclass(tp, basestring):
+            if token[:8] in ('hintmask', 'cntrmask'):
+                return 1 + len(token[8:])
+            return len(psCharStrings.T2CharString.opcodes[token])
+        elif tp == int:
+            return len(psCharStrings.encodeIntT2(token))
+        elif tp == float:
+            return len(psCharStrings.encodeFixed(token))
+        assert 0
+
+
+    sort_on = lambda self: -self.subr_saving()
+
+    def __lt__(self, other):
+        return self.sort_on() < other.sort_on()
+
+    def __le__(self, other):
+        return self.sort_on() <= other.sort_on()
+
+    def __eq__(self, other):
+        return self.sort_on() == other.sort_on()
+
+    def __ne__(self, other):
+        return self.sort_on() != other.sort_on()
+
+    def __ge__(self, other):
+        return self.sort_on() >= other.sort_on()
+
+    def __gt__(self, other):
+        return self.sort_on() > other.sort_on()
+
+
     def __repr__(self):
         return "<SubStringSet: %d x %d>" % (self.length, self.freq)
 
-def tokenCost(token):
-    """Calculate the bytecode size of a T2 Charstring token"""
-    tp = type(token)
-    if issubclass(tp, basestring):
-        if token[:8] in ('hintmask', 'cntrmask'):
-            return 1 + len(token[8:])
-        return len(psCharStrings.T2CharString.opcodes[token])
-    elif tp == int:
-        return len(psCharStrings.encodeIntT2(token))
-    elif tp == float:
-        return len(psCharStrings.encodeFixed(token))
-    assert 0
+class SuffixArrayBuilder(object):
+    """Builds a sorted suffix array from a glyph set"""
 
-def get_suffix_array(chstrings):
-    """Generate the sorted suffix array for `chstrings`."""
-
-    # make type (S or L) array
-    t = []
-    for chstr in reversed(chstrings):
-        t_run = []
-        last = float('-inf')
-        last_was_s = True #TODO: should this be initialized to True or False?
-        for i in reversed(chstr):
-            if i < last or (i == last and last_was_s):
-                t_run.insert(0, S_TYPE)
-                last_was_s = True
-            else:
-                t_run.insert(0, L_TYPE)
-                last_was_s = False
-            last = i
-        t.insert(0, t_run)
-
-    k = sum([len(chstr) for chstr in chstrings])
-    suf_arr = [(-1, -1) for x in xrange(k)]
-    buckets = [-1] * k
-
-    sorted_lms = induce_sort_lms(chstrings, suf_arr, t, buckets, k)
-    print(sorted_lms[:10]) # XXX PRINT ANSWER for now
-
-def mark_buckets(chstrings, buckets, k, ends=False, counts=None):
-    """
-    Find the start (or end) of buckets based on the first token
-    of suffixes in chstrings. Put this into `buckets` such that
-    `buckets[x]` tells you the start (or end) of the bucket for
-    alphabet element x.
-
-    Arguments:
-    chstrings -- 2-level array of charstrings (integer alphabet assumed)
-    buckets -- list of size k to use for holding bucket indices
-                (the effective output goes here)
-    k -- size of alphabet
-    ends -- True to get the end of bucket, false to get beginning
-    counts -- Include this to supply counts of the number of elements
-              beginning with each alphabet token. This is not necessary.
-
-    Returns: nothing. output goes into `buckets`.
-    """
-    if not counts:
-        # use `buckets` to store the bucket sizes (space optimization)
-        for i in range(k):
-            buckets[i] = 0 # 0 out relevant buckets
-
-        for chstr in chstrings:
-            for i in chstr:
-                buckets[i] += 1
-        counts = buckets
-
-    cur_sum = 0
-    if ends:
-        for i in range(k):
-            cur_sum += counts[i]
-            buckets[i] = cur_sum - 1
-    else:
-        for i in range(k):
-            cur_sum += counts[i]
-            buckets[i] = cur_sum - counts[i]
-
-def induce_sort_lms(chstrings, suf_arr, t, buckets, k):
-    """ 
-    Use the induced-sort strategy to sort the Left Most S-type
-    substrings.
-
-    Arguments:
-    chstrings -- 2-level array of charstrings (integer alphabet assumed)
-    suf_arr -- array to use for temporary storage during computation
-    t -- 2-level array mirroring chstrings that contains the types of each token
-    buckets -- list of size k to use for holding bucket indices
-    k -- size of alphabet
-
-    Returns: a list of identifiers for LMS substrings in sorted order
-    """
-    # import pdb; pdb.set_trace()
-
-    # find lms_strings by looping through type array
-    lms_strings = []
-    is_lms = [] # mirrors chstrings for determinging whether a char is LMS
-    #TODO: use numpy for above
-    for chidx, chstr_row in enumerate(t):
-        is_lms.append([False])
-        for idx in range(1, len(chstr_row)):
-            if chstr_row[idx] == S_TYPE and chstr_row[idx - 1] == L_TYPE:
-                lms_strings.append((chidx, idx))
-                is_lms[-1].append(True)
-            else:
-                is_lms[-1].append(False)
-
-    # clear out the suffix array for use here
-    for i in range(len(suf_arr)):
-        suf_arr[i] = (-1, -1)
-
-    # put lms suffixes into suf_arr in order of discovery
-    mark_buckets(chstrings, buckets, k, True)
-    for chidx, i in lms_strings:
-        suf_arr[buckets[chstrings[chidx][i]]] = (chidx, i)
-        buckets[chstrings[chidx][i]] -= 1
-
-    # import pdb; pdb.set_trace()
-    # put L-type prefixes into suf_arr in sorted order
-    # inducing from the LMS-prefixes
-    mark_buckets(chstrings, buckets, k)
-
-    # handle last elt first
-    chidx = len(chstrings) - 1 # last charstring
-    i = len(chstrings[-1]) # one past the last elt
-    if t[chidx][i - 1] == L_TYPE:
-        other = chstrings[chidx][i - 1]
-        suf_arr[buckets[other]] = (chidx, i - 1)
-        buckets[other] += 1
-    for chidx, i in suf_arr:
-        if i > 0:
-            if t[chidx][i - 1] == L_TYPE: # if other is l-type
-                other = chstrings[chidx][i - 1]
-                suf_arr[buckets[other]] = (chidx, i - 1)
-                buckets[other] += 1
-        elif i == 0 and chidx > 0:
-            last_pos = len(chstrings[chidx - 1]) - 1
-            if t[chidx - 1][-1] == L_TYPE: # if other is l-type
-                other = chstrings[chidx - 1][-1]
-                suf_arr[buckets[other]] = (chidx - 1, last_pos)
-                buckets[other] += 1
-
-
-    # Induced sort all S-types
-    mark_buckets(chstrings, buckets, k, True)
-    for chidx, i in reversed(suf_arr):
-        if i > 0:
-            if t[chidx][i - 1] == S_TYPE:
-                other = chstrings[chidx][i - 1]
-                suf_arr[buckets[other]] = (chidx, i - 1)
-                buckets[other] -= 1
-        elif i == 0 and chidx > 0:
-            last_pos = len(chstrings[chidx - 1]) - 1
-            if t[chidx - 1][-1] == S_TYPE: # if other is l-type
-                other = chstrings[chidx - 1][-1]
-                suf_arr[buckets[other]] = (chidx - 1, last_pos)
-                buckets[other] -= 1
-
-    # handle last elt last
-    chidx = len(chstrings) - 1 # last charstring
-    i = len(chstrings[-1]) # one past the last elt
-    if t[chidx][i - 1] == S_TYPE:
-        other = chstrings[chidx][i - 1]
-        suf_arr[buckets[other]] = (chidx, i - 1)
-        buckets[other] -= 1
-
-
-    # run through (now-sorted) suf_arr and
-    # write down the LMS-substrings in order
-    # using lms_strings for storage
-    pos = 0
-    for chidx, i in suf_arr:
-        if is_lms[chidx][i]:
-            lms_strings[pos] = (chidx, i)
-            pos += 1
-    
-    return lms_strings
-
-def find_subrs(font):
-    glyph_set = font.getGlyphSet()
-    return find_subrs_from_gs(glyph_set)
-    
-def find_subrs_from_gs(glyph_set):
-    """
-    Find subroutines using Suffix Arrays.
-
-    Returns: nothing for now
-    """
-    # chstrings is a 2-level array of charstrings:
+    suffixes = None
+    data = None
+    # data is a 2-level array of charstrings:
     #   The first level separates by glyph
     #   The second level separates by token
-    #       in a glyph's charstring 
-    chstrings = process_chstrings(glyph_set)
+    #       in a glyph's charstring
+    bucket_for = None
+    alphabet_size = None
+    length = None
+    keymap = None
+    rev_keymap = None
 
-    suf_arr = get_suffix_array(chstrings)
+    _completed = False
 
-def process_chstrings(glyph_set):
-    chstrings = []
-    glyph_set_keys = glyph_set.keys()
+    def __init__(self, glyph_set):
+        self.keymap = {} # maps charstring tokens -> simple integer alphabet
+        self.rev_keymap = [] # reversed keymap
+        #TODO: make above a numpy array
+        self.data = []
+        self.suffixes = []
 
-    global KEYMAP, REV_KEYMAP
-    KEYMAP = {} # maps charstring tokens -> simple integer alphabet
-    REV_KEYMAP = [] # reversed keymap
-    #TODO: make above a numpy array
-    next_key = 0
+        self.process_chstrings(glyph_set)
 
-    for k in glyph_set_keys:
-        char_string = glyph_set[k]
-        char_string.decompile()
-        program = []
-        piter = iter(enumerate(char_string.program))
-        for i, tok in piter:
-            assert tok not in ("callsubr", "callgsubr", "return", "endchar") \
-                    or tok == "endchar" and i == len(char_string.program) - 1
-            if tok in ("hintmask", "cntrmask"):
-                # Attach next token to this, as a subroutine
-                # call cannot be placed between this token and
-                # the following.
-                _, tokennext = next(piter)
-                token = '%s %s' % (token, tokennext)
-            if not tok in KEYMAP:
-                KEYMAP[tok] = next_key
-                REV_KEYMAP.append(tok)
-                next_key += 1
-            program.append(KEYMAP[tok])
+        self.length = 0
+        for glyph_idx in xrange(len(self.data)):
+            chstr_len = len(self.data[glyph_idx])
+            self.length += chstr_len
+            self.suffixes.extend(
+                map(lambda x: (glyph_idx, x), range(chstr_len))
+                )
 
-        chstrings.append(tuple(program))
-
-    return chstrings
+        self.bucket_for = [[None for _ in xrange(len(self.data[i]))] \
+                                for i in xrange(len(self.data))]
 
 
-# BASIC VERSION:
-class CharSubString(object):
-    """
-    Legacy. Contains a substring of a charstring 
-    for use in the simple subroutinizing algorithm.
-    """
-    glyph_idx = None
-    # these are the start and stop of the substrings
-    # relative to the start of the glyph's program
-    start = None
-    stop = None # exclusive
+    def process_chstrings(self, glyph_set):
+        """Remap the charstring alphabet and put into self.data"""
 
-    def __init__(self, glyph_idx=None, start=None, stop=None):
-        self.glyph_idx = glyph_idx
-        self.start = start
-        self.stop = stop
-        super(CharSubString, self).__init__()
+        glyph_set_keys = glyph_set.keys()
 
-    def is_valid(self):
-        return self.glyph_idx != None and self.start != None and self.stop != None
+        next_key = 0
 
-    def is_empty(self):
-        return self.stop <= self.start
+        for k in glyph_set_keys:
+            char_string = glyph_set[k]
+            char_string.decompile()
+            program = []
+            piter = iter(enumerate(char_string.program))
+            for i, tok in piter:
+                assert tok not in ("callsubr", "callgsubr", "return", "endchar") \
+                        or tok == "endchar" and i == len(char_string.program) - 1
+                if tok in ("hintmask", "cntrmask"):
+                    # Attach next token to this, as a subroutine
+                    # call cannot be placed between this token and
+                    # the following.
+                    _, tokennext = next(piter)
+                    token = '%s %s' % (token, tokennext)
+                if not tok in self.keymap:
+                    self.keymap[tok] = next_key
+                    self.rev_keymap.append(tok)
+                    next_key += 1
+                program.append(self.keymap[tok])
 
-    def __repr__(self):
-        return "<SubString: %d, %d:%d>" % (self.glyph_idx, self.start, self.stop)
+            self.data.append(tuple(program))
 
-class GlyphCharString(object):
-    """
-    Legacy. Holds both the internized charstring along with the
-    glyph id from whence it come (ie cid1234).
-    """
-    glyph_key = None # glyh id (string)
-    charstring = None # charstring (tuple)
+        self.alphabet_size = next_key
 
-    def __init__(self, glyph_key, program):
-        self.glyph_key = glyph_key
-        self.charstring = program
-        super(GlyphCharString, self).__init__()
+    def get_suffixes(self):
+        """Return the sorted suffix array"""
 
-    def __iter__(self):
-        return self.charstring.__iter__()
+        import time
+        if self._completed:
+            return self.suffixes
 
-    def __getitem__(self, key):
-        return self.charstring[key]
+        print("Gettings suffixes via Python sort"); start_time = time.time()
 
-    def __repr__(self):
-        return self.glyph_key
+        self.suffixes.sort(key=lambda idx: self.data[idx[0]][idx[1]:])
+        self._completed = True
 
-def simple_find_subrs(font):
-    """
-    Finds subroutines using simple FontForge-style algorithm
+        print("Took %gs" % (time.time() - start_time))
+        return self.suffixes
 
-    Returns: a sorted list of `CharSubStringSet`s 
-    """
-    bytecode = []
-    chstrings = []
-    glyph_set = font.getGlyphSet()
+    def get_substrings(self, branching=True, min_freq=2):
+        """Return the sorted substring sets (with freq >= min_freq)"""
 
-    for k in glyph_set.keys():
-        char_string = glyph_set[k]
-        bytecode.append(char_string.bytecode)
-        char_string.decompile()
-        chstrings.append(GlyphCharString(k, char_string.program))
+        self.get_suffixes()
 
-    substrings = []
-    for glyph_idx, prgm in enumerate(chstrings):
-        cur_span = CharSubString(glyph_idx, 0)
-        break_after_next = False
-        last_op = -1
-        for pos, tok in enumerate(prgm):
-            if type(tok) == str and tok[-6:] == 'moveto':
-                cur_span.stop = last_op + 1
-                if not cur_span.is_empty():
-                    substrings.append(cur_span)
-                cur_span = CharSubString(glyph_idx, pos + 1)
-            elif tok == 'hintmask':
-                break_after_next = True
-            elif type(tok) == str or break_after_next:
-                last_op = pos
-        if last_op - cur_span.start >= 0:
-            cur_span.stop = last_op + 1
-            substrings.append(cur_span)
+        # initally just do this naively for comparison purposes
+        # will use LCP later
+        print("Extracting substrings"); import time; start_time = time.time()
 
-    matches = {}
-    for substr in substrings:
-        part = tuple(chstrings[substr.glyph_idx][substr.start:substr.stop])
-        if part in matches:
-            matches[part].locations.append((substr.glyph_idx, substr.start))
+        spin_time = 0
+
+        start_indices = []
+        self.substrings = []
+        previous = ()
+
+        for i, (glyph_idx, tok_idx) in enumerate(self.suffixes):
+            current = self.data[glyph_idx][tok_idx:]
+
+            if current == previous:
+                continue
+
+            spin_start = time.time()
+            max_l = min(len(previous), len(current))
+            min_l = max_l
+            for l in range(max_l):
+                if previous[l] != current[l]:
+                    min_l = l
+                    break
+            spin_time += time.time() - spin_start
+
+            # First min_l items are still the same.
+
+            # Pop the rest from previous and account for.
+            for l in range(min_l, len(previous)):
+                freq = i - start_indices[l]
+                if freq < min_freq:
+                    break
+                if branching and l + 1 < len(previous) and freq == i - start_indices[l+1]:
+                    # This substring is redundant since the substring
+                    # one longer has the same frequency.  Ie., this one
+                    # is not "branching".
+                    continue
+                substr = CharSubStringSet(l, 
+                                          [self.suffixes[j] for j 
+                                              in range(start_indices[l], i)],
+                                          self.data,
+                                          self.rev_keymap)
+                if substr.subr_saving() > 0:
+                    self.substrings.append(substr)
+
+            previous = current
+            start_indices = start_indices[:min_l]
+            start_indices += [i] * (len(current) - min_l)
+
+        print("Spin time: %gs" % spin_time)
+
+        print("Took %gs" % (time.time() - start_time)); start_time = time.time()
+        print("Sorting")
+        self.substrings.sort(key=lambda s: s.subr_saving(), reverse=True)
+        print("Took %gs" % (time.time() - start_time))
+        return self.substrings
+
+    def radix_get_sorted(self):
+        """Take the input stream of data (integers) and returns the sorted
+        suffix array (storing it in self.suffixes)"""
+
+        if self._completed:
+            return self.suffixes
+
+        # see Rajasekaran et al for explanation of below:
+        # d = 3 * math.log(self.length, self.alphabet_size)
+        d = SORT_DEPTH
+        radix_sort_suffixes(d, 0, self.length)
+
+        touches = [0 for _ in xrange(self.length)]
+        cur_sort = [d for _ in xrange(self.length)]
+        skipped = True # dummy value
+
+        while skipped:
+            for i in xrange(len(touches)):
+                touches[i] = 0
+            skipped = False
+
+            for glyph_idx in reversed(self.data):
+                for tok_idx in reversed(self.data[glyph_idx]):
+                    b = self.bucket_for[glyph_idx][tok_idx]
+                    
+                    for i in range(*b):
+                        if touches[i] > MAX_TOUCHES:
+                            skipped = False
+                            break
+                    if skipped:
+                        continue
+
+                    if b[1] - b[0] > 1:
+                        # handle sorting of this bucket
+                        radix_sort_suffixes(d, b[0], b[1], touches[b[0]] * d, (glyph_idx, tok_idx+1))
+
+                        for i in range(*b):
+                            touches[i] += 1
+
+        self._completed = True
+        return self.suffixes
+
+    def radix_sort_suffixes(self, distance, start, end, offset=0, correct_at=None):
+        """Perform a radix sort on `suffixes`, which refers to indices
+        of `input`. Sort to the first `distance` terms starting from 
+        `offset`. Store the bucket of suffix i in `self.bucket_start[i]`.
+        Return the bucket start locations."""
+        import time
+        total_start = time.time()
+
+
+        length = end - start
+        if length < TIMSORT_THRESHOLD:
+            # just do a regular sort, keying on the actual suffix
+            self.suffixes[start:end] = sorted(self.suffixes[start:end],
+                                              key=lambda x: self.data[x[0]][x[1]:])
         else:
-            matches[part] = CharSubStringSet(substr.stop - substr.start, 
-                                [(substr.glyph_idx, substr.start)])
+            # perform a radix sort on the first `distance` tokens
 
-    match_items = matches.items()
-    match_items.sort(key=lambda i: i[1].length * len(i[1].locations), reverse=True)
+            def get_tok_for(glyph_idx, tok_idx, i):
+                if tok_idx + i + offset < len(self.data[glyph_idx]):
+                    return self.data[glyph_idx][tok_idx + i + offset]
+                else:
+                    return None
+            print("Making buckets and final"); start_time = time.time()
+            buckets = [0 for _ in xrange(self.alphabet_size + 1)]
+            final = [None for _ in range(length)]
+            print("Took %gs" % (time.time() - start_time));
+            for i in reversed(range(distance)):
+                print(i)
+                real_start = start
+                # use buckets to store bucket sizes (space optimization)
+                print("Making counts"); start_time = time.time()
+                for key in range(self.alphabet_size):
+                    buckets[key] = 0
+                for pos in range(length):
+                    glyph_idx, tok_idx = self.suffixes[start + pos]
+                    tok = get_tok_for(glyph_idx, tok_idx, i)
+                    if tok != None:
+                        buckets[tok] += 1
+                    else:
+                        # this is possibly broken
+                        tmp = self.suffixes[real_start]
+                        self.suffixes[real_start] = self.suffixes[start + pos]
+                        self.suffixes[start + pos] = tmp
+                        real_start += 1
+                print("Took %gs" % (time.time() - start_time))
+                # find bucket starts
+                print("Find bucket starts"); start_time = time.time()
+                cur_sum = 0
+                for key in range(self.alphabet_size):
+                    cur_sum += buckets[key]
+                    buckets[key] = cur_sum - buckets[key]
+                buckets[-1] = cur_sum
+                bucket_names = buckets[:] # store original starts as names
+                print("Took %gs" % (time.time() - start_time))
 
-    return match_items
+                for pos in range(len(final)):
+                    final[pos] = (-1, -1)
 
-# ---------------------------
+                print("Bucket assigment"); start_time = time.time()
+                cur_bucket = None
+                for pos in range(end - real_start):
+                    glyph_idx, tok_idx = self.suffixes[real_start + pos]
+                    tok = get_tok_for(glyph_idx, tok_idx, i)
+                    if self.bucket_for[glyph_idx][tok_idx] and \
+                       self.bucket_for[glyph_idx][tok_idx][0] != cur_bucket:
+                        # for b in zip(bucket_names, buckets):
+                        #     print(b)
+                        #     for j in range(*b):
+                        #         glidx, tidx = self.suffixes[real_start + j]
+                        #         self.bucket_for[glidx][tidx][1] = b[1]
+                        bucket_names = buckets[:] # reset bucket names
+                        cur_bucket = self.bucket_for[glyph_idx][tok_idx]
+                    dest = buckets[tok]
+                    final[dest] = (glyph_idx, tok_idx)
+                    buckets[tok] += 1
+                    self.bucket_for[glyph_idx][tok_idx] = \
+                        [bucket_names[tok] + real_start, -1]
+                print("Took %gs" % (time.time() - start_time))
+                # for b in zip(bucket_names, buckets):
+                #     print(b)
+                #     for j in range(*b):
+                #         glidx, tidx = self.suffixes[real_start + j]
+                #         self.bucket_for[glidx][tidx][1] = b[1]
+                print("Copying in"); start_time = time.time()
+                self.suffixes[real_start:end] = final[:end-(real_start-start)]
+                print("Took %gs" % (time.time() - start_time))
+
+            # figure out bucket endpoints
+            print("Figuring endpoints"); start_time = time.time()
+            last_end = end
+            for pos in reversed(range(start, end)):
+                glyph_idx, tok_idx = self.suffixes[pos]
+                self.bucket_for[glyph_idx][tok_idx][1] = last_end
+                if self.bucket_for[glyph_idx][tok_idx][0] == pos:
+                    last_end = pos
+            print("Took %gs" % (time.time() - start_time))
+
+        print("Total took %gs" % (time.time() - total_start))
 
 
 def _test():
     """
     >>> from testData import *
-    >>> induce_sort_lms(chstrings, suf_arr, t, buckets, k)
-    [(1, 5), (1, 1), (0, 2)]
-    >>> induce_sort_lms(chstrings2, suf_arr, t2, buckets, k)
-    [(0, 10), (0, 6), (0, 2)]
+    >>> sab = SuffixArrayBuilder(DummyGlyphSet({'a': (0, 1, 2), 'b': (1, 0, 0)}))
+    >>> sab.radix_sort_suffixes(4, 0, 6)
+    >>> sab.suffixes
+    [(1, 2), (1, 1), (0, 0), (1, 0), (0, 1), (0, 2)]
+
 
     # test CharSubStringSet.cost() somehow!
     """
@@ -444,9 +440,7 @@ if __name__ == '__main__':
         import doctest
         doctest.testmod(verbose=args.verbose_test)
 
-    # simple_subrs = simple_find_subrs(font)
-    # print('Simple answer:')
-    # print([(i[0], i[1].length, len(i[1].locations)) for i in simple_subrs[:10]])
-
-    subrs = find_subrs(font) # prints some stuff
+    sab = SuffixArrayBuilder(font.getGlyphSet())
+    substrings = sab.get_substrings()
+    print(len(substrings))
 
