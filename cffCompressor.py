@@ -54,7 +54,7 @@ class CharSubStringSet(object):
         """Return the size (in bytes) that the bytecode for this takes up"""
         try:
             if not hasattr(self, '__cost'):
-                self.__cost = sum([self.tokenCost(self.rev_keymap[token]) for token in self.value()])
+                self.__cost = self.string_cost(self.value(), self.rev_keymap)
             return self.__cost
         except:
             raise Exception('Translated token not recognized') 
@@ -90,6 +90,10 @@ class CharSubStringSet(object):
         elif tp == float:
             return len(psCharStrings.encodeFixed(token))
         assert 0
+
+    @staticmethod
+    def string_cost(charstring, rev_keymap):
+        return sum([CharSubStringSet.tokenCost(rev_keymap[token]) for token in charstring])
 
 
     sort_on = lambda self: -self.subr_saving()
@@ -295,7 +299,7 @@ class SubstringFinder(object):
         print("Took %gs" % (time.time() - start_time))
         return self.substrings
 
-    def get_substrings(self, min_freq=2):
+    def get_substrings(self, min_freq=2, check_positive=True):
         """Return the sorted substring sets (with freq >= min_freq)"""
 
         self.get_suffixes()
@@ -332,7 +336,7 @@ class SubstringFinder(object):
                                               in range(start_idx, i)],
                                           self.data,
                                           self.rev_keymap)
-                if substr.subr_saving() > 0:
+                if substr.subr_saving() > 0 or not check_positive:
                     self.substrings.append(substr)
 
             if not start_indices or min_l > start_indices[-1][0]:
@@ -343,6 +347,85 @@ class SubstringFinder(object):
         self.substrings.sort(key=lambda s: s.subr_saving(), reverse=True)
         print("Took %gs (to sort)" % (time.time() - start_time))
         return self.substrings
+
+
+def dynamic_allocate(glyph_set):
+    ALPHA = 0.1
+    K = 1
+
+    import pdb; pdb.set_trace()
+
+    # generate substrings for marketplace
+    sf = SubstringFinder(glyph_set)
+    substrings = sf.get_substrings(0, False)
+    substr_dict = {}
+
+    # set up dictionary with initial values
+    for substr in substrings:
+        # XXX this could poss. work? just using substr frequency rather than usage
+        substr.price = substr.cost() / substr.freq
+        substr.usages = 0
+        substr_dict[substr.value()] = substr
+
+    # encoding array to store chosen encodings
+    encodings = [None] * len(sf.data)
+
+    for i in range(100):
+        # calibrate prices
+        for substr in substr_dict.values():
+            marg_cost = substr.cost() / (substr.usages + K)
+            substr.price = marg_cost * ALPHA + substr.price * (1 - ALPHA)
+
+        # minimize costs in current market through DP
+        for idx, charstring in enumerate(sf.data):
+            results = [0] * (len(charstring) + 1)
+            next_idx = [None] * len(charstring)
+            for i in reversed(range(len(charstring))):
+                min_option = float('inf')
+                min_idx = -1
+                for j in range(i + 1, len(charstring) + 1):
+                    if charstring[i:j] in substr_dict:
+                        option = substr_dict[charstring[i:j]].price + results[j]
+                    else:
+                        option = \
+                            CharSubStringSet.string_cost(charstring[i:j], sf.rev_keymap) + \
+                            results[j]
+                    
+                    if option < min_option:
+                        min_option = option
+                        min_idx = j
+
+                results[i] = min_option
+                next_idx[i] = min_idx
+
+            market_cost = results[0]
+            encoding = []
+            cur_idx = next_idx[0]
+            while cur_idx != None and cur_idx != len(charstring):
+                encoding.append(cur_idx)
+                cur_idx = next_idx[cur_idx]
+            encoding.append(len(charstring))
+
+            encodings[idx] = tuple(encoding)
+
+            print "Charstring ", charstring, ": market_cost=", \
+                    market_cost, ", encoding=", encoding
+
+
+        # update substring frequencies based on cost minimization
+        for substr in substr_dict.values():
+            substr.usages = 0
+        for enc in encodings:
+            for idx in range(1, len(enc)):
+                substr = tuple(sf.data[enc[idx - 1]:enc[idx]])
+                if substr in substr_dict:
+                    substr = substr_dict[substr]
+                    substr.usages += 1
+
+        print "Round Done!"
+        print
+
+
 
 
 def _test():
