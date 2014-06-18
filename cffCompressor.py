@@ -3,18 +3,10 @@
 """Tool to subroutinize a CFF table"""
 
 import argparse, heapq
+from collections import deque
 # import numpy as np
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
-
-# OP_MAP = dict((k, v) for (v, k) in t2Operators)
-
-S_TYPE = True
-L_TYPE = False
-
-TIMSORT_THRESHOLD = 300
-MAX_TOUCHES = 3
-SORT_DEPTH = 10
 
 class CharSubStringSet(object):
     """
@@ -208,7 +200,36 @@ class SubstringFinder(object):
         print("Took %gs" % (time.time() - start_time))
         return self.suffixes
 
-    def get_substrings(self, branching=True, min_freq=2):
+    def get_lcp(self):
+        """Returns the LCP array"""
+        rank = [[0 for _ in xrange(len(d_list))] for d_list in self.data]
+        lcp = [0 for _ in xrange(self.length)]
+
+        # compute rank array
+        for i in range(self.length):
+            glyph_idx, tok_idx = self.suffixes[i]
+            rank[glyph_idx][tok_idx] = i
+
+        for glyph_idx in xrange(len(self.data)):
+            cur_h = 0
+            chstring = self.data[glyph_idx]
+            for tok_idx in xrange(len(chstring)):
+                cur_rank = rank[glyph_idx][tok_idx]
+                if cur_rank > 0:
+                    last_glidx, last_tidx = self.suffixes[cur_rank - 1]
+                    last_chstring = self.data[last_glidx]
+                    while last_tidx + cur_h < len(last_chstring) and \
+                          tok_idx + cur_h < len(chstring) and \
+                          last_chstring[last_tidx + cur_h] == self.data[glyph_idx][tok_idx + cur_h]:
+                        cur_h += 1
+                    lcp[cur_rank] = cur_h
+
+                    if cur_h > 0:
+                        cur_h -= 1
+
+        return lcp
+
+    def get_substrings_initial(self, branching=True, min_freq=2):
         """Return the sorted substring sets (with freq >= min_freq)"""
 
         self.get_suffixes()
@@ -222,7 +243,7 @@ class SubstringFinder(object):
         start_indices = []
         self.substrings = []
         previous = ()
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         for i, (glyph_idx, tok_idx) in enumerate(self.suffixes):
             current = self.data[glyph_idx][tok_idx:]
 
@@ -245,7 +266,7 @@ class SubstringFinder(object):
             for l in range(min_l, len(previous)):
                 freq = i - start_indices[l]
                 if freq < min_freq:
-                    print 'Freq reject: ', previous[:l]
+                    # print 'Freq reject: ', previous[:l]
                     break
                 if branching and l + 1 < len(previous) and freq == i - start_indices[l+1]:
                     # This substring is redundant since the substring
@@ -259,8 +280,8 @@ class SubstringFinder(object):
                                           self.rev_keymap)
                 if substr.subr_saving() > 0:
                     self.substrings.append(substr)
-                else:
-                    print 'Savings reject: ', current[:l]
+                # else:
+                #     print 'Savings reject: ', current[:l]
 
             previous = current
             start_indices = start_indices[:min_l]
@@ -274,7 +295,54 @@ class SubstringFinder(object):
         print("Took %gs" % (time.time() - start_time))
         return self.substrings
 
+    def get_substrings(self, min_freq=2):
+        """Return the sorted substring sets (with freq >= min_freq)"""
 
+        self.get_suffixes()
+
+        print("Extracting substrings"); import time; start_time = time.time()
+
+        print("Getting lcp"); lcp_time = time.time()
+
+        lcp = self.get_lcp()
+
+        print("Took %gs (to get lcp array)" % (time.time() - lcp_time))
+
+        start_indices = deque()
+        self.substrings = []
+
+        for i, (glyph_idx, tok_idx) in enumerate(self.suffixes):
+            current = self.data[glyph_idx][tok_idx:]
+
+            min_l = lcp[i]
+            # First min_l items are still the same.
+
+            # Pop the rest from previous and account for.
+            # Note: non-branching substrings aren't included
+            #TODO: don't allow overlapping substrings into the same set
+            # import pdb; pdb.set_trace()
+            while start_indices and start_indices[-1][0] > min_l:
+                l, start_idx = start_indices.pop()
+                freq = i - start_idx
+                if freq < min_freq:
+                    continue
+                
+                substr = CharSubStringSet(l,
+                                          [self.suffixes[j] for j 
+                                              in range(start_idx, i)],
+                                          self.data,
+                                          self.rev_keymap)
+                if substr.subr_saving() > 0:
+                    self.substrings.append(substr)
+
+            if not start_indices or min_l > start_indices[-1][0]:
+                start_indices.append((min_l, i - 1))
+
+        print("Took %gs (to extract substrings)" % (time.time() - start_time)); start_time = time.time()
+        print("Sorting")
+        self.substrings.sort(key=lambda s: s.subr_saving(), reverse=True)
+        print("Took %gs (to sort)" % (time.time() - start_time))
+        return self.substrings
 
 
 def _test():

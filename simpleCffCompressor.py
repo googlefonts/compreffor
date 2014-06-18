@@ -1,5 +1,9 @@
 from cffCompressor import CharSubStringSet
 
+TIMSORT_THRESHOLD = 300
+MAX_TOUCHES = 3
+SORT_DEPTH = 10
+
 class CharSubString(object):
     """
     Legacy. Contains a substring of a charstring 
