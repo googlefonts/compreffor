@@ -37,6 +37,8 @@ class CharSubStringSet(object):
         self.rev_keymap = rev_keymap
 
     def __len__(self):
+        """Return the number of tokens in this substring"""
+
         return self.length
 
     def value(self):
@@ -325,7 +327,7 @@ class SubstringFinder(object):
         print("Took %gs" % (time.time() - start_time))
         return self.substrings
 
-    def get_substrings(self, min_freq=2, check_positive=True):
+    def get_substrings(self, min_freq=2, check_positive=True, sort_by_length=False):
         """
         Return repeated substrings (type CharSubStringSet) from the charstrings
         sorted by subroutine savings with freq >= min_freq using the LCP array. 
@@ -377,7 +379,10 @@ class SubstringFinder(object):
 
         print("Took %gs (to extract substrings)" % (time.time() - start_time)); start_time = time.time()
         print("Sorting")
-        self.substrings.sort(key=lambda s: s.subr_saving(), reverse=True)
+        if sort_by_length:
+            self.substrings.sort(key=lambda s: len(s))
+        else:
+            self.substrings.sort(key=lambda s: s.subr_saving(), reverse=True)
         print("Took %gs (to sort)" % (time.time() - start_time))
         return self.substrings
 
@@ -391,6 +396,7 @@ def iterative_encode(glyph_set, verbose=True):
 
     Arguments:
     glyph_set -- the set of charstrings to encode
+    verbose -- if True, print miscellanous info during iterations
 
     Returns:
     An encoding dictionary which specifies how to break up each charstring.
@@ -405,16 +411,17 @@ def iterative_encode(glyph_set, verbose=True):
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
-    substrings = sf.get_substrings(0, False)
+    substrings = sf.get_substrings(min_freq=0, check_positive=False, sort_by_length=True)
     substr_dict = {}
 
     import time; start_time = time.time()
 
     # set up dictionary with initial values
     for substr in substrings:
-        # XXX this could poss. work? just using substr frequency rather than usage
-        substr.price = substr.cost()
-        substr.usages = substr.freq # this is the frequency that the substring appears, not necessarily used
+        substr.adjusted_cost = substr.cost()
+        substr.price = substr.adjusted_cost
+        substr.usages = substr.freq # this is the frequency that the substring appears, 
+                                    # not necessarily used
         substr_dict[substr.value()] = substr
 
     # encoding array to store chosen encodings
@@ -426,44 +433,25 @@ def iterative_encode(glyph_set, verbose=True):
             marg_cost = float(substr.cost()) / (substr.usages + K)
             substr.price = marg_cost * ALPHA + substr.price * (1 - ALPHA)
 
-        # minimize costs in current market through DP
+        # minimize charstring costs in current market through DP
         for idx, charstring in enumerate(sf.data):
-            results = [0] * (len(charstring) + 1)
-            next_idx = [None] * len(charstring)
-            for i in reversed(range(len(charstring))):
-                min_option = float('inf')
-                min_idx = -1
-                for j in range(i + 1, len(charstring) + 1):
-                    if charstring[i:j] in substr_dict:
-                        option = substr_dict[charstring[i:j]].price + results[j]
-                    else:
-                        option = \
-                            CharSubStringSet.string_cost([sf.rev_keymap[t] \
-                              for t in charstring[i:j]]) + results[j]
-                    
-                    if option < min_option:
-                        min_option = option
-                        min_idx = j
-
-                results[i] = min_option
-                next_idx[i] = min_idx
-
-            market_cost = results[0]
-            encoding = []
-            last_idx = 0 
-            cur_idx = next_idx[0]
-            while cur_idx != None and cur_idx < len(next_idx):
-                if cur_idx - last_idx > 1:
-                    encoding.append((last_idx, cur_idx))
-                last_idx = cur_idx
-                cur_idx = next_idx[cur_idx]
+            ans = optimize_charstring(charstring, sf.rev_keymap, substr_dict)
             
-
-            encodings[idx] = tuple(encoding)
+            encodings[idx] = tuple(ans["encoding"])
 
             if verbose:
                 print "Charstring %s: market_cost=%f, encoding=%s" % \
-                        (charstring, market_cost, encoding)
+                        (charstring, ans["market_cost"], ans["encoding"])
+
+        # minimize substring costs
+        for substr in substrings:
+            ans = optimize_charstring(substr.value(), sf.rev_keymap, substr_dict)
+            substr.encoding = ans["encoding"]
+            substr.adjusted_cost = ans["market_cost"]
+
+            if verbose:
+                print "Substring %s: market_cost=%f, encoding=%s" % \
+                        (substr.value(), ans["market_cost"], ans["encoding"])
 
 
         # update substring frequencies based on cost minimization
@@ -483,6 +471,42 @@ def iterative_encode(glyph_set, verbose=True):
 
     return dict((sf.glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings)))
 
+def optimize_charstring(charstring, rev_keymap, substr_dict):
+    """Optimize a charstring (encoded using inverse ofrev_keymap) using
+    the substrings in substr_dict. This is the Dynamic Programming portion
+    of `iterative_encode`."""
+
+    results = [0] * (len(charstring) + 1)
+    next_idx = [None] * len(charstring)
+    for i in reversed(range(len(charstring))):
+        min_option = float('inf')
+        min_idx = -1
+        for j in range(i + 1, len(charstring) + 1):
+            if charstring[i:j] in substr_dict:
+                option = substr_dict[charstring[i:j]].price + results[j]
+            else:
+                option = \
+                    CharSubStringSet.string_cost([rev_keymap[t] \
+                      for t in charstring[i:j]]) + results[j]
+            
+            if option < min_option:
+                min_option = option
+                min_idx = j
+
+        results[i] = min_option
+        next_idx[i] = min_idx
+
+    market_cost = results[0]
+    encoding = []
+    last_idx = 0 
+    cur_idx = next_idx[0]
+    while cur_idx != None and cur_idx < len(next_idx):
+        if cur_idx - last_idx > 1:
+            encoding.append((last_idx, cur_idx))
+        last_idx = cur_idx
+        cur_idx = next_idx[cur_idx]
+
+    return {"encoding": encoding, "market_cost": market_cost}
 
 def _test():
     """
@@ -506,14 +530,13 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    import doctest
+    doctest.testmod(verbose=args.verbose_test)
+
     if args.test:
         from testCffCompressor import TestCffCompressor
         test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
         unittest.TextTestRunner().run(test_suite)
-
-    if args.doctest:
-        import doctest
-        doctest.testmod(verbose=args.verbose_test)
 
     if args.filename:
         font = TTFont(args.filename)
