@@ -2,7 +2,7 @@
 
 """Tool to subroutinize a CFF table"""
 
-import argparse, heapq
+import argparse, heapq, unittest
 from collections import deque
 # import numpy as np
 from fontTools.ttLib import TTFont
@@ -13,11 +13,12 @@ class CharSubStringSet(object):
     Records a substring of a charstring that is generally
     repeated throughout many glyphs.
     """
+
     length = None # length of substring
     locations = None # list tuples of form (glyph_idx, start_pos)
     freq = None # number of times it appears
     chstrings = None # chstrings from whence this substring came
-    rev_keymap = None
+    rev_keymap = None # array from simple alphabet -> actual token
 
     def __init__(self, length=None, locs=None, chstrings=None, rev_keymap=None):
         if length == None:
@@ -39,22 +40,26 @@ class CharSubStringSet(object):
         return self.length
 
     def value(self):
-        """Returns the actual substring"""
+        """Returns the actual substring value"""
+
         try:
             return self.chstrings[self.locations[0][0]][self.locations[0][1]:(self.locations[0][1] + self.length)]
         except IndexError: # there are no locations
             return None
 
     def add_location(self, location):
-        """Add a location where this substring appears"""
+        """Add a location where this substring appears (2-tuple specifying
+            position in chstrings)"""
+
         self.locations.append(location)
         self.freq += 1
 
     def cost(self):
         """Return the size (in bytes) that the bytecode for this takes up"""
+
         try:
             if not hasattr(self, '__cost'):
-                self.__cost = self.string_cost(self.value(), self.rev_keymap)
+                self.__cost = self.string_cost([self.rev_keymap[t] for t in self.value()])
             return self.__cost
         except:
             raise Exception('Translated token not recognized') 
@@ -68,6 +73,7 @@ class CharSubStringSet(object):
         call_cost -- the cost to call a subroutine
         subr_overhead -- the cost to define a subroutine
         """
+
         #TODO:
         # - If substring ends in "endchar", we need no "return"
         #   added and as such subr_overhead will be one byte
@@ -80,6 +86,7 @@ class CharSubStringSet(object):
     @staticmethod
     def tokenCost(token):
         """Calculate the bytecode size of a T2 Charstring token"""
+
         tp = type(token)
         if issubclass(tp, basestring):
             if token[:8] in ('hintmask', 'cntrmask'):
@@ -92,8 +99,10 @@ class CharSubStringSet(object):
         assert 0
 
     @staticmethod
-    def string_cost(charstring, rev_keymap):
-        return sum([CharSubStringSet.tokenCost(rev_keymap[token]) for token in charstring])
+    def string_cost(charstring):
+        """Calculate the bytecode size of a T2 Charstring substring. Note:
+        tokens are taken literally and are not remapped."""
+        return sum(map(CharSubStringSet.tokenCost, charstring))
 
 
     sort_on = lambda self: -self.subr_saving()
@@ -121,7 +130,12 @@ class CharSubStringSet(object):
         return "<SubStringSet: %d x %d>" % (self.length, self.freq)
 
 class SubstringFinder(object):
-    """Builds a sorted suffix array from a glyph set"""
+    """
+    This class facilitates the finding of repeated substrings
+    within a glyph_set. Typical usage involves creation of an instance
+    and then calling `get_substrings`, which returns a sorted list
+    of `CharSubStringSet`s.
+    """
 
     suffixes = None
     data = None
@@ -134,6 +148,7 @@ class SubstringFinder(object):
     length = None
     keymap = None
     rev_keymap = None
+    glyph_set_keys = None
 
     _completed = False
 
@@ -161,24 +176,25 @@ class SubstringFinder(object):
     def process_chstrings(self, glyph_set):
         """Remap the charstring alphabet and put into self.data"""
 
-        glyph_set_keys = glyph_set.keys()
+        self.glyph_set_keys = glyph_set.keys()
 
         next_key = 0
 
-        for k in glyph_set_keys:
+        for k in self.glyph_set_keys:
             char_string = glyph_set[k]
             char_string.decompile()
             program = []
             piter = iter(enumerate(char_string.program))
             for i, tok in piter:
-                assert tok not in ("callsubr", "callgsubr", "return", "endchar") \
-                        or tok == "endchar" and i == len(char_string.program) - 1
+                # assert tok not in ("callsubr", "callgsubr", "return", "endchar") or \
+                #        tok in ("callsubr", "callgsubr", "return", "endchar") and \
+                #             i == len(char_string.program) - 1
                 if tok in ("hintmask", "cntrmask"):
                     # Attach next token to this, as a subroutine
                     # call cannot be placed between this token and
                     # the following.
                     _, tokennext = next(piter)
-                    token = '%s %s' % (token, tokennext)
+                    tok = '%s %s' % (tok, tokennext)
                 if not tok in self.keymap:
                     self.keymap[tok] = next_key
                     self.rev_keymap.append(tok)
@@ -206,6 +222,7 @@ class SubstringFinder(object):
 
     def get_lcp(self):
         """Returns the LCP array"""
+
         rank = [[0 for _ in xrange(len(d_list))] for d_list in self.data]
         lcp = [0 for _ in xrange(self.length)]
 
@@ -234,7 +251,16 @@ class SubstringFinder(object):
         return lcp
 
     def get_substrings_initial(self, branching=True, min_freq=2):
-        """Return the sorted substring sets (with freq >= min_freq)"""
+        """
+        Return repeated substrings (type CharSubStringSet) from the charstrings
+        sorted by subroutine savings with freq >= min_freq using the initial
+        algorithm (no LCP). This is here for comparison with get_substrings to
+        see the improvement.
+
+        Arguments:
+        branching -- if True, only include "branching" substrings (see Kasai et al)
+        min_freq -- the minimum frequency required to include a substring
+        """
 
         self.get_suffixes()
 
@@ -300,7 +326,14 @@ class SubstringFinder(object):
         return self.substrings
 
     def get_substrings(self, min_freq=2, check_positive=True):
-        """Return the sorted substring sets (with freq >= min_freq)"""
+        """
+        Return repeated substrings (type CharSubStringSet) from the charstrings
+        sorted by subroutine savings with freq >= min_freq using the LCP array. 
+
+        Arguments:
+        min_freq -- the minimum frequency required to include a substring
+        check_positive -- if True, only allow substrings with positive subr_saving
+        """
 
         self.get_suffixes()
 
@@ -324,7 +357,7 @@ class SubstringFinder(object):
             # Pop the rest from previous and account for.
             # Note: non-branching substrings aren't included
             #TODO: don't allow overlapping substrings into the same set
-            # import pdb; pdb.set_trace()
+
             while start_indices and start_indices[-1][0] > min_l:
                 l, start_idx = start_indices.pop()
                 freq = i - start_idx
@@ -349,7 +382,24 @@ class SubstringFinder(object):
         return self.substrings
 
 
-def dynamic_allocate(glyph_set):
+def iterative_encode(glyph_set, verbose=True):
+    """
+    Choose a subroutinization encoding for all charstrings in
+    `glyph_set` using an iterative Dynamic Programming algorithm.
+    Initially uses the results from SubstringFinder and then
+    iteratively optimizes.
+
+    Arguments:
+    glyph_set -- the set of charstrings to encode
+
+    Returns:
+    An encoding dictionary which specifies how to break up each charstring.
+    Encoding[i] describes how to encode glyph i. Each entry is something
+    like [(x_1, y_1), (x_2, y_2), ..., (x_k, y_k)], which means that the
+    glyph_set[i][x_1:y_1], glyph_set[i][x_2:y_2], ..., glyph_set[i][x_k:y_k]
+    should each be subroutinized.
+    """
+
     ALPHA = 0.1
     K = 1.0
 
@@ -357,6 +407,8 @@ def dynamic_allocate(glyph_set):
     sf = SubstringFinder(glyph_set)
     substrings = sf.get_substrings(0, False)
     substr_dict = {}
+
+    import time; start_time = time.time()
 
     # set up dictionary with initial values
     for substr in substrings:
@@ -368,7 +420,7 @@ def dynamic_allocate(glyph_set):
     # encoding array to store chosen encodings
     encodings = [None] * len(sf.data)
 
-    for run_count in range(100):
+    for run_count in range(10):
         # calibrate prices
         for substr in substr_dict.values():
             marg_cost = float(substr.cost()) / (substr.usages + K)
@@ -386,8 +438,8 @@ def dynamic_allocate(glyph_set):
                         option = substr_dict[charstring[i:j]].price + results[j]
                     else:
                         option = \
-                            CharSubStringSet.string_cost(charstring[i:j], sf.rev_keymap) + \
-                            results[j]
+                            CharSubStringSet.string_cost([sf.rev_keymap[t] \
+                              for t in charstring[i:j]]) + results[j]
                     
                     if option < min_option:
                         min_option = option
@@ -398,29 +450,28 @@ def dynamic_allocate(glyph_set):
 
             market_cost = results[0]
             encoding = []
+            last_idx = 0 
             cur_idx = next_idx[0]
-            while cur_idx != None and cur_idx != len(charstring):
-                encoding.append(cur_idx)
+            while cur_idx != None and cur_idx < len(next_idx):
+                if cur_idx - last_idx > 1:
+                    encoding.append((last_idx, cur_idx))
+                last_idx = cur_idx
                 cur_idx = next_idx[cur_idx]
-            encoding.append(len(charstring))
+            
 
             encodings[idx] = tuple(encoding)
 
-            print "Charstring ", charstring, ": market_cost=", \
-                    market_cost, ", encoding=", encoding
+            if verbose:
+                print "Charstring %s: market_cost=%f, encoding=%s" % \
+                        (charstring, market_cost, encoding)
 
 
         # update substring frequencies based on cost minimization
         for substr in substr_dict.values():
             substr.usages = 0
         for glyph_idx, enc in enumerate(encodings):
-            first = tuple(sf.data[glyph_idx][0:enc[0]])
-            if first in substr_dict:
-                first = substr_dict[first]
-                first.usages += 1
-
-            for idx in range(1, len(enc)):
-                substr = tuple(sf.data[glyph_idx][enc[idx - 1]:enc[idx]])
+            for start, stop in enc:
+                substr = tuple(sf.data[glyph_idx][start:stop])
                 if substr in substr_dict:
                     substr = substr_dict[substr]
                     substr.usages += 1
@@ -428,7 +479,9 @@ def dynamic_allocate(glyph_set):
         print "Round %d Done!" % (run_count + 1)
         print
 
+    print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
 
+    return dict((sf.glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings)))
 
 
 def _test():
@@ -436,29 +489,38 @@ def _test():
     >>> from testData import *
     >>> sf = SubstringFinder(glyph_set)
     >>> sf.get_suffixes() # doctest: +ELLIPSIS
+    G...
     [(0, 0), (1, 1), (0, 1), (0, 2), (1, 0), (1, 2)]
-
-
-    # test CharSubStringSet.cost() somehow!
     """
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Subroutinize a font.')
-    parser.add_argument('filename', help='Where to find the font')
+    parser.add_argument('filename', help='Where to find the font', nargs='?')
     parser.add_argument('-t', required=False, action='store_true',
                         dest='test', default=False)
+    parser.add_argument('-d', required=False, action='store_true',
+                        dest='doctest', default=False)
     parser.add_argument('-v', required=False, action='store_true',
                         dest='verbose_test', default=False)
 
     args = parser.parse_args()
-    font = TTFont(args.filename)
 
     if args.test:
+        from testCffCompressor import TestCffCompressor
+        test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
+        unittest.TextTestRunner().run(test_suite)
+
+    if args.doctest:
         import doctest
         doctest.testmod(verbose=args.verbose_test)
 
-    sab = SubstringFinder(font.getGlyphSet())
-    substrings = sab.get_substrings()
-    print(len(substrings))
+    if args.filename:
+        font = TTFont(args.filename)
+        sf = SubstringFinder(font.getGlyphSet())
+        substrings = sf.get_substrings()
+        print("%d substrings found" % len(substrings))
+        print
+        print("Running dynamic_allocate:")
+        dynamic_allocate(font.getGlyphSet())
 
