@@ -430,7 +430,7 @@ def iterative_encode(glyph_set, verbose=True):
     for run_count in range(10):
         # calibrate prices
         for substr in substr_dict.values():
-            marg_cost = float(substr.cost()) / (substr.usages + K)
+            marg_cost = float(substr.adjusted_cost) / (substr.usages + K)
             substr.price = marg_cost * ALPHA + substr.price * (1 - ALPHA)
 
         # minimize charstring costs in current market through DP
