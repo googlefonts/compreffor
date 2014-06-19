@@ -351,9 +351,7 @@ class SubstringFinder(object):
 
 def dynamic_allocate(glyph_set):
     ALPHA = 0.1
-    K = 1
-
-    import pdb; pdb.set_trace()
+    K = 1.0
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -363,17 +361,17 @@ def dynamic_allocate(glyph_set):
     # set up dictionary with initial values
     for substr in substrings:
         # XXX this could poss. work? just using substr frequency rather than usage
-        substr.price = substr.cost() / substr.freq
-        substr.usages = 0
+        substr.price = substr.cost()
+        substr.usages = substr.freq # this is the frequency that the substring appears, not necessarily used
         substr_dict[substr.value()] = substr
 
     # encoding array to store chosen encodings
     encodings = [None] * len(sf.data)
 
-    for i in range(100):
+    for run_count in range(100):
         # calibrate prices
         for substr in substr_dict.values():
-            marg_cost = substr.cost() / (substr.usages + K)
+            marg_cost = float(substr.cost()) / (substr.usages + K)
             substr.price = marg_cost * ALPHA + substr.price * (1 - ALPHA)
 
         # minimize costs in current market through DP
@@ -415,14 +413,19 @@ def dynamic_allocate(glyph_set):
         # update substring frequencies based on cost minimization
         for substr in substr_dict.values():
             substr.usages = 0
-        for enc in encodings:
+        for glyph_idx, enc in enumerate(encodings):
+            first = tuple(sf.data[glyph_idx][0:enc[0]])
+            if first in substr_dict:
+                first = substr_dict[first]
+                first.usages += 1
+
             for idx in range(1, len(enc)):
-                substr = tuple(sf.data[enc[idx - 1]:enc[idx]])
+                substr = tuple(sf.data[glyph_idx][enc[idx - 1]:enc[idx]])
                 if substr in substr_dict:
                     substr = substr_dict[substr]
                     substr.usages += 1
 
-        print "Round Done!"
+        print "Round %d Done!" % (run_count + 1)
         print
 
 
