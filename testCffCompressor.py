@@ -17,6 +17,12 @@ class TestCffCompressor(unittest.TestCase):
             self.rand_gs[i] = tuple(random.randint(0, 100) for _ in range(length))
         self.random_sf = cffCompressor.SubstringFinder(DummyGlyphSet(self.rand_gs))
 
+        length = 3
+        locations = [(0, 0), (1, 4)]
+        charstrings = [(348, 374, 'rmoveto', 'endchar'), (123, -206, -140, 'hlineto', 348, 374, 'rmoveto', 'endchar')]
+
+        self.csss = cffCompressor.CharSubStringSet(length, locations, charstrings)
+
     def test_iterative_encode(self):
         """Test iterative_encode function"""
 
@@ -42,6 +48,8 @@ class TestCffCompressor(unittest.TestCase):
             self.assertTrue(substr.subr_saving() > 0)
 
     def test_get_suffixes(self):
+        """Test the results of suffix array construction."""
+
         ans = self.short_sf.get_suffixes()
 
         self.assertEqual(ans, [(0, 0), (1, 1), (0, 1), (0, 2), (1, 0), (1, 2)])
@@ -63,6 +71,13 @@ class TestCffCompressor(unittest.TestCase):
             current = self.random_sf.data[glyph_idx][tok_idx:]
             self.assertTrue(last <= current)
 
+    def test_get_lcp(self):
+        """Test the lcp array generation"""
+
+        expected = [0, 6, 5, 0, 5, 4, 0, 4, 3, 0, 3, 2, 0, 2, 1, 0, 1, 0, 0, 0, 0]
+
+        self.assertEqual(self.sf.get_lcp(), expected)
+
     def test_tokenCost(self):
         """Make sure single tokens can have their cost calculated"""
 
@@ -79,3 +94,29 @@ class TestCffCompressor(unittest.TestCase):
         string_cost = cffCompressor.CharSubStringSet.string_cost
 
         self.assertEqual(string_cost((108, 'endchar')), 3)
+
+    def test_substringset_add_location(self):
+        """Test the add location function in CharSubStringSet"""
+
+        old_loc_len = len(self.csss.locations)
+        old_freq = self.csss.freq
+        self.assertEqual(old_loc_len, 2)
+        self.assertTrue((5, 2) not in self.csss.locations)
+
+        self.csss.add_location((5, 2))
+
+        self.assertEqual(len(self.csss.locations) - old_loc_len, 1)
+        self.assertTrue((5, 2) in self.csss.locations)
+        self.assertEqual(self.csss.freq - old_freq, 1)
+
+    def test_substringset_len(self):
+        """Make sure len returns the correct length"""
+
+        self.assertEqual(len(self.csss), 3)
+
+    def test_substringset_value(self):
+        """Make sure the value is correct"""
+
+        expected_value = (348, 374, 'rmoveto')
+
+        self.assertEqual(self.csss.value(), expected_value)

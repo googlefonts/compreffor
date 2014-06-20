@@ -152,7 +152,7 @@ class SubstringFinder(object):
     rev_keymap = None
     glyph_set_keys = None
 
-    _completed = False
+    _completed_suffixes = False
 
     def __init__(self, glyph_set):
         self.keymap = {} # maps charstring tokens -> simple integer alphabet
@@ -188,9 +188,9 @@ class SubstringFinder(object):
             program = []
             piter = iter(enumerate(char_string.program))
             for i, tok in piter:
-                # assert tok not in ("callsubr", "callgsubr", "return", "endchar") or \
-                #        tok in ("callsubr", "callgsubr", "return", "endchar") and \
-                #             i == len(char_string.program) - 1
+                assert tok not in ("callsubr", "callgsubr", "return", "endchar") or \
+                       tok in ("callsubr", "callgsubr", "return", "endchar") and \
+                            i == len(char_string.program) - 1
                 if tok in ("hintmask", "cntrmask"):
                     # Attach next token to this, as a subroutine
                     # call cannot be placed between this token and
@@ -211,19 +211,24 @@ class SubstringFinder(object):
         """Return the sorted suffix array"""
 
         import time
-        if self._completed:
+        if self._completed_suffixes:
             return self.suffixes
 
         print("Gettings suffixes via Python sort"); start_time = time.time()
 
         self.suffixes.sort(key=lambda idx: self.data[idx[0]][idx[1]:])
-        self._completed = True
+        self._completed_suffixes = True
 
         print("Took %gs" % (time.time() - start_time))
         return self.suffixes
 
     def get_lcp(self):
         """Returns the LCP array"""
+
+        if not self._completed_suffixes:
+            self.get_suffixes()
+
+        assert self._completed_suffixes
 
         rank = [[0 for _ in xrange(len(d_list))] for d_list in self.data]
         lcp = [0 for _ in xrange(self.length)]
