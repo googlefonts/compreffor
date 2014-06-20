@@ -104,7 +104,22 @@ class CharSubStringSet(object):
     def string_cost(charstring):
         """Calculate the bytecode size of a T2 Charstring substring. Note:
         tokens are taken literally and are not remapped."""
-        return sum(map(CharSubStringSet.tokenCost, charstring))
+
+        global STRING_COST_CACHE
+        charstring = tuple(charstring)
+
+        try:
+            cached = charstring in STRING_COST_CACHE
+        except NameError:
+            STRING_COST_CACHE = {}
+            cached = False
+
+        if cached:
+            return STRING_COST_CACHE[charstring]
+        else:
+            ret = sum(map(CharSubStringSet.tokenCost, charstring))
+            STRING_COST_CACHE[charstring] = ret
+            return ret
 
 
     sort_on = lambda self: -self.subr_saving()
@@ -392,7 +407,7 @@ class SubstringFinder(object):
         return self.substrings
 
 
-def iterative_encode(glyph_set, verbose=True):
+def iterative_encode(glyph_set, verbose=True, test_mode=False):
     """
     Choose a subroutinization encoding for all charstrings in
     `glyph_set` using an iterative Dynamic Programming algorithm.
@@ -402,6 +417,7 @@ def iterative_encode(glyph_set, verbose=True):
     Arguments:
     glyph_set -- the set of charstrings to encode
     verbose -- if True, print miscellanous info during iterations
+    test_mode -- disables some checks (such as positive subr_saving)
 
     Returns:
     An encoding dictionary which specifies how to break up each charstring.
@@ -416,7 +432,7 @@ def iterative_encode(glyph_set, verbose=True):
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
-    substrings = sf.get_substrings(min_freq=0, check_positive=False, sort_by_length=True)
+    substrings = sf.get_substrings(min_freq=0, check_positive=(not test_mode), sort_by_length=True)
     substr_dict = {}
 
     import time; start_time = time.time()
@@ -432,7 +448,7 @@ def iterative_encode(glyph_set, verbose=True):
     # encoding array to store chosen encodings
     encodings = [None] * len(sf.data)
 
-    for run_count in range(10):
+    for run_count in range(2):
         # calibrate prices
         for substr in substr_dict.values():
             marg_cost = float(substr.adjusted_cost) / (substr.usages + K)
@@ -485,11 +501,12 @@ def optimize_charstring(charstring, rev_keymap, substr_dict):
     next_idx = [None] * len(charstring)
     for i in reversed(range(len(charstring))):
         min_option = float('inf')
-        min_idx = -1
+        min_idx = len(charstring)
         for j in range(i + 1, len(charstring) + 1):
             if charstring[i:j] in substr_dict:
                 option = substr_dict[charstring[i:j]].price + results[j]
             else:
+                # note: must not be branching, so just make price actual cost
                 option = \
                     CharSubStringSet.string_cost([rev_keymap[t] \
                       for t in charstring[i:j]]) + results[j]

@@ -26,7 +26,7 @@ class TestCffCompressor(unittest.TestCase):
     def test_iterative_encode(self):
         """Test iterative_encode function"""
 
-        ans = cffCompressor.iterative_encode(self.glyph_set)
+        ans = cffCompressor.iterative_encode(self.glyph_set, test_mode=True)
         self.assertEqual(ans, {'a': ((0, 5),), 'b': ((1, 6),), 'c': ((0, 5),)})
 
     def test_get_substrings_all(self):
