@@ -8,7 +8,7 @@ from collections import deque
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
 
-class CharSubStringSet(object):
+class CandidateSubr(object):
     """
     Records a substring of a charstring that is generally
     repeated throughout many glyphs.
@@ -117,7 +117,7 @@ class CharSubStringSet(object):
         if cached:
             return STRING_COST_CACHE[charstring]
         else:
-            ret = sum(map(CharSubStringSet.tokenCost, charstring))
+            ret = sum(map(CandidateSubr.tokenCost, charstring))
             STRING_COST_CACHE[charstring] = ret
             return ret
 
@@ -144,14 +144,14 @@ class CharSubStringSet(object):
 
 
     def __repr__(self):
-        return "<SubStringSet: %d x %d>" % (self.length, self.freq)
+        return "<CandidateSubr: %d x %d>" % (self.length, self.freq)
 
 class SubstringFinder(object):
     """
     This class facilitates the finding of repeated substrings
     within a glyph_set. Typical usage involves creation of an instance
     and then calling `get_substrings`, which returns a sorted list
-    of `CharSubStringSet`s.
+    of `CandidateSubr`s.
     """
 
     suffixes = None
@@ -274,7 +274,7 @@ class SubstringFinder(object):
 
     def get_substrings_initial(self, branching=True, min_freq=2):
         """
-        Return repeated substrings (type CharSubStringSet) from the charstrings
+        Return repeated substrings (type CandidateSubr) from the charstrings
         sorted by subroutine savings with freq >= min_freq using the initial
         algorithm (no LCP). This is here for comparison with get_substrings to
         see the improvement.
@@ -325,7 +325,7 @@ class SubstringFinder(object):
                     # one longer has the same frequency.  Ie., this one
                     # is not "branching".
                     continue
-                substr = CharSubStringSet(l + 1, 
+                substr = CandidateSubr(l + 1, 
                                           [self.suffixes[j] for j 
                                               in range(start_indices[l], i)],
                                           self.data,
@@ -349,7 +349,7 @@ class SubstringFinder(object):
 
     def get_substrings(self, min_freq=2, check_positive=True, sort_by_length=False):
         """
-        Return repeated substrings (type CharSubStringSet) from the charstrings
+        Return repeated substrings (type CandidateSubr) from the charstrings
         sorted by subroutine savings with freq >= min_freq using the LCP array. 
 
         Arguments:
@@ -386,7 +386,7 @@ class SubstringFinder(object):
                 if freq < min_freq:
                     continue
                 
-                substr = CharSubStringSet(l,
+                substr = CandidateSubr(l,
                                           [self.suffixes[j] for j 
                                               in range(start_idx, i)],
                                           self.data,
@@ -439,9 +439,9 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     # set up dictionary with initial values
     for substr in substrings:
-        substr.adjusted_cost = substr.cost()
-        substr.price = substr.adjusted_cost
-        substr.usages = substr.freq # this is the frequency that the substring appears, 
+        substr._adjusted_cost = substr.cost()
+        substr._price = substr._adjusted_cost
+        substr._usages = substr.freq # this is the frequency that the substring appears, 
                                     # not necessarily used
         substr_dict[substr.value()] = substr
 
@@ -451,8 +451,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     for run_count in range(2):
         # calibrate prices
         for substr in substr_dict.values():
-            marg_cost = float(substr.adjusted_cost) / (substr.usages + K)
-            substr.price = marg_cost * ALPHA + substr.price * (1 - ALPHA)
+            marg_cost = float(substr._adjusted_cost) / (substr._usages + K)
+            substr._price = marg_cost * ALPHA + substr._price * (1 - ALPHA)
 
         # minimize charstring costs in current market through DP
         for idx, charstring in enumerate(sf.data):
@@ -467,8 +467,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         # minimize substring costs
         for substr in substrings:
             ans = optimize_charstring(substr.value(), sf.rev_keymap, substr_dict)
-            substr.encoding = ans["encoding"]
-            substr.adjusted_cost = ans["market_cost"]
+            substr._encoding = ans["encoding"]
+            substr._adjusted_cost = ans["market_cost"]
 
             if verbose:
                 print "Substring %s: market_cost=%f, encoding=%s" % \
@@ -477,13 +477,11 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
         # update substring frequencies based on cost minimization
         for substr in substr_dict.values():
-            substr.usages = 0
+            substr._usages = 0
         for glyph_idx, enc in enumerate(encodings):
-            for start, stop in enc:
-                substr = tuple(sf.data[glyph_idx][start:stop])
-                if substr in substr_dict:
-                    substr = substr_dict[substr]
-                    substr.usages += 1
+            for start, stop, substr in enc:
+                if substr:
+                    substr._usages += 1
 
         print "Round %d Done!" % (run_count + 1)
         print
@@ -492,43 +490,93 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     return dict((sf.glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings)))
 
+class EncodingItem:
+    idx = -1
+    substr = None
+
+    def __init__(self, idx, substr=None):
+        self.idx = idx
+        self.substr = substr
+
+    def __len__(self):
+        return len(self.substr) if self.substr else 1
+
 def optimize_charstring(charstring, rev_keymap, substr_dict):
     """Optimize a charstring (encoded using inverse ofrev_keymap) using
     the substrings in substr_dict. This is the Dynamic Programming portion
     of `iterative_encode`."""
 
     results = [0] * (len(charstring) + 1)
-    next_idx = [None] * len(charstring)
+    next_enc = [None] * len(charstring)
     for i in reversed(range(len(charstring))):
         min_option = float('inf')
-        min_idx = len(charstring)
+        min_enc = EncodingItem(len(charstring))
         for j in range(i + 1, len(charstring) + 1):
             if charstring[i:j] in substr_dict:
-                option = substr_dict[charstring[i:j]].price + results[j]
+                substr = substr_dict[charstring[i:j]]
+                option = substr._price + results[j]
             else:
-                # note: must not be branching, so just make price actual cost
+                # note: must not be branching, so just make _price actual cost
+                substr = None
                 option = \
-                    CharSubStringSet.string_cost([rev_keymap[t] \
+                    CandidateSubr.string_cost([rev_keymap[t] \
                       for t in charstring[i:j]]) + results[j]
             
             if option < min_option:
                 min_option = option
-                min_idx = j
+                min_enc = EncodingItem(j, substr)
 
         results[i] = min_option
-        next_idx[i] = min_idx
+        next_enc[i] = min_enc
 
     market_cost = results[0]
     encoding = []
     last_idx = 0 
-    cur_idx = next_idx[0]
-    while cur_idx != None and cur_idx < len(next_idx):
-        if cur_idx - last_idx > 1:
-            encoding.append((last_idx, cur_idx))
-        last_idx = cur_idx
-        cur_idx = next_idx[cur_idx]
+    cur_enc = next_enc[0]
+    while cur_enc != None and cur_enc.idx < len(next_enc):
+        if cur_enc.idx - last_idx > 1:
+            encoding.append((last_idx, cur_enc.idx, cur_enc.substr))
+        last_idx = cur_enc.idx
+        cur_enc = next_enc[cur_enc.idx]
 
     return {"encoding": encoding, "market_cost": market_cost}
+
+def apply_encoding(font, glyph_encoding):
+    """Apply the result of iterative_encode to a TTFont"""
+
+    assert len(font['CFF '].cff.topDictIndex) == 1
+    top_dict = font['CFF '].cff.topDictIndex[0]
+
+    subrs = set()
+    subrs.update([it[2] for enc in glyph_encoding.values() for it in enc])
+    subrs = sorted(list(subrs), key=lambda s: s._usages, reverse=True)
+
+    for subr in subrs:
+        subr._position = len(top_dict.Private.Subrs)
+        program = [subr.rev_keymap[tok] for tok in subr.value()]
+        if program[-1] not in ("endchar", "return"):
+            program.append("return")
+        subr._program = program
+        item = psCharStrings.T2CharString(program=program)
+        top_dict.Private.Subrs.append(item)
+
+    bias = psCharStrings.calcSubrBias(top_dict.Private.Subrs)
+
+    for glyph, enc in glyph_encoding.iteritems():
+        charstring = top_dict.CharStrings[glyph]
+        for item in enc:
+            charstring.program[item[0]:item[1]] = [item[2]._position - bias, "callsubr"]
+        if not (charstring.program[-1] == "endchar" \
+            or charstring.program[-1] == "callsubr" and enc[-1][2]._program[-1] == "endchar"):
+            charstring.program.append("endchar")
+
+
+def compress_cff(font, out_file="compressed.otf"):
+    """Compress a font using the iterative method and output result"""
+
+    encoding = iterative_encode(font.getGlyphSet(), verbose=False)
+    apply_encoding(font, encoding)
+    font.save(out_file)
 
 def _test():
     """

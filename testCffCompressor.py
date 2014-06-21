@@ -21,12 +21,19 @@ class TestCffCompressor(unittest.TestCase):
         locations = [(0, 0), (1, 4)]
         charstrings = [(348, 374, 'rmoveto', 'endchar'), (123, -206, -140, 'hlineto', 348, 374, 'rmoveto', 'endchar')]
 
-        self.csss = cffCompressor.CharSubStringSet(length, locations, charstrings)
+        self.csss = cffCompressor.CandidateSubr(length, locations, charstrings)
 
     def test_iterative_encode(self):
         """Test iterative_encode function"""
 
         ans = cffCompressor.iterative_encode(self.glyph_set, test_mode=True)
+        self.assertIsInstance(ans, dict)
+
+        # don't care about CandidateSubr objects, delete them
+        for k in ans.keys():
+            enc = [i[:2] for i in ans[k]]
+            ans[k] = tuple(enc)
+
         self.assertEqual(ans, {'a': ((0, 5),), 'b': ((1, 6),), 'c': ((0, 5),)})
 
     def test_get_substrings_all(self):
@@ -81,7 +88,7 @@ class TestCffCompressor(unittest.TestCase):
     def test_tokenCost(self):
         """Make sure single tokens can have their cost calculated"""
 
-        tokenCost = cffCompressor.CharSubStringSet.tokenCost
+        tokenCost = cffCompressor.CandidateSubr.tokenCost
 
         self.assertEqual(tokenCost('hlineto'), 1)
         self.assertEqual(tokenCost('flex'), 2)
@@ -91,12 +98,12 @@ class TestCffCompressor(unittest.TestCase):
     def test_string_cost(self):
         """Ensure an entire string can have its cost calculated"""
 
-        string_cost = cffCompressor.CharSubStringSet.string_cost
+        string_cost = cffCompressor.CandidateSubr.string_cost
 
         self.assertEqual(string_cost((108, 'endchar')), 3)
 
-    def test_substringset_add_location(self):
-        """Test the add location function in CharSubStringSet"""
+    def test_candidatesubr_add_location(self):
+        """Test the add location function in CandidateSubr"""
 
         old_loc_len = len(self.csss.locations)
         old_freq = self.csss.freq
@@ -109,12 +116,12 @@ class TestCffCompressor(unittest.TestCase):
         self.assertTrue((5, 2) in self.csss.locations)
         self.assertEqual(self.csss.freq - old_freq, 1)
 
-    def test_substringset_len(self):
+    def test_candidatesubr_len(self):
         """Make sure len returns the correct length"""
 
         self.assertEqual(len(self.csss), 3)
 
-    def test_substringset_value(self):
+    def test_candidatesubr_value(self):
         """Make sure the value is correct"""
 
         expected_value = (348, 374, 'rmoveto')
