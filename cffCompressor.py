@@ -564,8 +564,10 @@ def apply_encoding(font, glyph_encoding):
 
     for glyph, enc in glyph_encoding.iteritems():
         charstring = top_dict.CharStrings[glyph]
+        offset = 0
         for item in enc:
-            charstring.program[item[0]:item[1]] = [item[2]._position - bias, "callsubr"]
+            charstring.program[(item[0] - offset):(item[1] - offset)] = [item[2]._position - bias, "callsubr"]
+            offset += item[1] - item[0] - 2
         if not (charstring.program[-1] == "endchar" \
             or charstring.program[-1] == "callsubr" and enc[-1][2]._program[-1] == "endchar"):
             charstring.program.append("endchar")
