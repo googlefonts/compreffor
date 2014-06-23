@@ -17,24 +17,15 @@ class CandidateSubr(object):
     """
 
     length = None # length of substring
-    locations = None # list tuples of form (glyph_idx, start_pos)
+    location = None # tuple of form (glyph_idx, start_pos) where a ref string starts
     freq = None # number of times it appears
     chstrings = None # chstrings from whence this substring came
     rev_keymap = None # array from simple alphabet -> actual token
 
-    def __init__(self, length=None, locs=None, freq=0, chstrings=None, rev_keymap=None):
-        if length == None:
-            self.length = 0
-        else:
-            self.length = length
-
-        if locs == None:
-            self.locations = []
-            self.freq = 0
-        else:
-            self.locations = locs
-            self.freq = len(locs)
-
+    def __init__(self, length, ref_loc, freq=0, chstrings=None, rev_keymap=None):
+        self.length = length
+        self.location = ref_loc
+        self.freq = freq
         self.chstrings = chstrings
         self.rev_keymap = rev_keymap
 
@@ -46,20 +37,14 @@ class CandidateSubr(object):
     def value(self):
         """Returns the actual substring value"""
 
-        try:
-            return self.chstrings[self.locations[0][0]][self.locations[0][1]:(self.locations[0][1] + self.length)]
-        except IndexError: # there are no locations
-            return None
+        assert self.chstrings != None
 
-    def add_location(self, location):
-        """Add a location where this substring appears (2-tuple specifying
-            position in chstrings)"""
-
-        self.locations.append(location)
-        self.freq += 1
+        return self.chstrings[self.location[0]][self.location[1]:(self.location[1] + self.length)]
 
     def cost(self):
         """Return the size (in bytes) that the bytecode for this takes up"""
+
+        assert self.rev_keymap != None
 
         try:
             if not hasattr(self, '__cost'):
@@ -339,11 +324,11 @@ class SubstringFinder(object):
                     # one longer has the same frequency.  Ie., this one
                     # is not "branching".
                     continue
-                substr = CandidateSubr(l + 1, 
-                                          [self.suffixes[j] for j 
-                                              in range(start_indices[l], i)],
-                                          self.data,
-                                          self.rev_keymap)
+                substr = CandidateSubr(l + 1,
+                                       self.suffixes[start_indices[l]],
+                                       i - start_indices[l],
+                                       self.data,
+                                       self.rev_keymap)
                 if substr.subr_saving() > 0:
                     self.substrings.append(substr)
                 # else:
@@ -401,10 +386,10 @@ class SubstringFinder(object):
                     continue
                 
                 substr = CandidateSubr(l,
-                                          [self.suffixes[j] for j 
-                                              in range(start_idx, i)],
-                                          self.data,
-                                          self.rev_keymap)
+                                       self.suffixes[start_idx],
+                                       i - start_idx,
+                                       self.data,
+                                       self.rev_keymap)
                 if substr.subr_saving() > 0 or not check_positive:
                     self.substrings.append(substr)
 

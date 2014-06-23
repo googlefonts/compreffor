@@ -21,7 +21,7 @@ class TestCffCompressor(unittest.TestCase):
         locations = [(0, 0), (1, 4)]
         charstrings = [(348, 374, 'rmoveto', 'endchar'), (123, -206, -140, 'hlineto', 348, 374, 'rmoveto', 'endchar')]
 
-        self.cand_subr = cffCompressor.CandidateSubr(length, locations, charstrings)
+        self.cand_subr = cffCompressor.CandidateSubr(length, locations[0], 2, charstrings)
 
     def test_iterative_encode(self):
         """Test iterative_encode function"""
@@ -99,7 +99,7 @@ class TestCffCompressor(unittest.TestCase):
         """Test update_program with only one replacement"""
 
         program = [7, 2, 10, 4, 8, 7, 0]
-        substr = cffCompressor.CandidateSubr(3)
+        substr = cffCompressor.CandidateSubr(3, (0, 1))
         substr._position = 5
         encoding = [(1, substr)]
         bias = 0
@@ -112,9 +112,9 @@ class TestCffCompressor(unittest.TestCase):
         """Test update_program with two replacements"""
 
         program = [7, 2, 10, 4, 8, 7, 0]
-        substr = cffCompressor.CandidateSubr(3)
+        substr = cffCompressor.CandidateSubr(3, (0, 1))
         substr._position = 5
-        substr2 = cffCompressor.CandidateSubr(2)
+        substr2 = cffCompressor.CandidateSubr(2, (0, 5))
         substr2._position = 21
         encoding = [(1, substr), (5, substr2)]
         bias = 0
@@ -122,7 +122,6 @@ class TestCffCompressor(unittest.TestCase):
         cffCompressor.update_program(program, encoding, bias)
 
         self.assertEqual(program, [7, 5, "callsubr", 8, 21, "callsubr"])
-
 
     # ---
 
@@ -142,20 +141,6 @@ class TestCffCompressor(unittest.TestCase):
         string_cost = cffCompressor.CandidateSubr.string_cost
 
         self.assertEqual(string_cost((108, 'endchar')), 3)
-
-    def test_candidatesubr_add_location(self):
-        """Test the add location function in CandidateSubr"""
-
-        old_loc_len = len(self.cand_subr.locations)
-        old_freq = self.cand_subr.freq
-        self.assertEqual(old_loc_len, 2)
-        self.assertTrue((5, 2) not in self.cand_subr.locations)
-
-        self.cand_subr.add_location((5, 2))
-
-        self.assertEqual(len(self.cand_subr.locations) - old_loc_len, 1)
-        self.assertTrue((5, 2) in self.cand_subr.locations)
-        self.assertEqual(self.cand_subr.freq - old_freq, 1)
 
     def test_candidatesubr_len(self):
         """Make sure len returns the correct length"""
