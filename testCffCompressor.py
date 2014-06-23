@@ -21,7 +21,7 @@ class TestCffCompressor(unittest.TestCase):
         locations = [(0, 0), (1, 4)]
         charstrings = [(348, 374, 'rmoveto', 'endchar'), (123, -206, -140, 'hlineto', 348, 374, 'rmoveto', 'endchar')]
 
-        self.csss = cffCompressor.CandidateSubr(length, locations, charstrings)
+        self.cand_subr = cffCompressor.CandidateSubr(length, locations, charstrings)
 
     def test_iterative_encode(self):
         """Test iterative_encode function"""
@@ -29,12 +29,12 @@ class TestCffCompressor(unittest.TestCase):
         ans = cffCompressor.iterative_encode(self.glyph_set, test_mode=True)
         self.assertIsInstance(ans, dict)
 
-        # don't care about CandidateSubr objects, delete them
+        # don't care about CandidateSubr objects, just take their length
         for k in ans.keys():
-            enc = [i[:2] for i in ans[k]]
+            enc = [(i[0], i[1].length) for i in ans[k]]
             ans[k] = tuple(enc)
 
-        self.assertEqual(ans, {'a': ((0, 5),), 'b': ((1, 6),), 'c': ((0, 5),)})
+        self.assertEqual(ans, {'a': ((0, 5),), 'b': ((1, 5),), 'c': ((0, 5),)})
 
     def test_get_substrings_all(self):
         """Test get_substrings without restrictions"""
@@ -85,6 +85,47 @@ class TestCffCompressor(unittest.TestCase):
 
         self.assertEqual(self.sf.get_lcp(), expected)
 
+    def test_human_size(self):
+        """Test the human_size function for various numbers of bytes"""
+
+        human_size = cffCompressor.human_size
+
+        self.assertEqual(human_size(2), "2.0 bytes")
+        self.assertEqual(human_size(2050), "2.0 KB")
+        self.assertEqual(human_size(3565158), "3.4 MB")
+        self.assertEqual(human_size(6120328397), "5.7 GB")
+
+    def test_update_program(self):
+        """Test update_program with only one replacement"""
+
+        program = [7, 2, 10, 4, 8, 7, 0]
+        substr = cffCompressor.CandidateSubr(3)
+        substr._position = 5
+        encoding = [(1, substr)]
+        bias = 0
+
+        cffCompressor.update_program(program, encoding, bias)
+
+        self.assertEqual(program, [7, 5, "callsubr", 8, 7, 0])
+
+    def test_update_program_multiple(self):
+        """Test update_program with two replacements"""
+
+        program = [7, 2, 10, 4, 8, 7, 0]
+        substr = cffCompressor.CandidateSubr(3)
+        substr._position = 5
+        substr2 = cffCompressor.CandidateSubr(2)
+        substr2._position = 21
+        encoding = [(1, substr), (5, substr2)]
+        bias = 0
+
+        cffCompressor.update_program(program, encoding, bias)
+
+        self.assertEqual(program, [7, 5, "callsubr", 8, 21, "callsubr"])
+
+
+    # ---
+
     def test_tokenCost(self):
         """Make sure single tokens can have their cost calculated"""
 
@@ -105,25 +146,25 @@ class TestCffCompressor(unittest.TestCase):
     def test_candidatesubr_add_location(self):
         """Test the add location function in CandidateSubr"""
 
-        old_loc_len = len(self.csss.locations)
-        old_freq = self.csss.freq
+        old_loc_len = len(self.cand_subr.locations)
+        old_freq = self.cand_subr.freq
         self.assertEqual(old_loc_len, 2)
-        self.assertTrue((5, 2) not in self.csss.locations)
+        self.assertTrue((5, 2) not in self.cand_subr.locations)
 
-        self.csss.add_location((5, 2))
+        self.cand_subr.add_location((5, 2))
 
-        self.assertEqual(len(self.csss.locations) - old_loc_len, 1)
-        self.assertTrue((5, 2) in self.csss.locations)
-        self.assertEqual(self.csss.freq - old_freq, 1)
+        self.assertEqual(len(self.cand_subr.locations) - old_loc_len, 1)
+        self.assertTrue((5, 2) in self.cand_subr.locations)
+        self.assertEqual(self.cand_subr.freq - old_freq, 1)
 
     def test_candidatesubr_len(self):
         """Make sure len returns the correct length"""
 
-        self.assertEqual(len(self.csss), 3)
+        self.assertEqual(len(self.cand_subr), 3)
 
     def test_candidatesubr_value(self):
         """Make sure the value is correct"""
 
         expected_value = (348, 374, 'rmoveto')
 
-        self.assertEqual(self.csss.value(), expected_value)
+        self.assertEqual(self.cand_subr.value(), expected_value)

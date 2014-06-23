@@ -2,7 +2,9 @@
 
 """Tool to subroutinize a CFF table"""
 
-import argparse, heapq, unittest
+import os
+import argparse
+import unittest
 from collections import deque
 # import numpy as np
 from fontTools.ttLib import TTFont
@@ -20,7 +22,7 @@ class CandidateSubr(object):
     chstrings = None # chstrings from whence this substring came
     rev_keymap = None # array from simple alphabet -> actual token
 
-    def __init__(self, length=None, locs=None, chstrings=None, rev_keymap=None):
+    def __init__(self, length=None, locs=None, freq=0, chstrings=None, rev_keymap=None):
         if length == None:
             self.length = 0
         else:
@@ -125,21 +127,33 @@ class CandidateSubr(object):
     sort_on = lambda self: -self.subr_saving()
 
     def __lt__(self, other):
+        if type(other) != CandidateSubr:
+            return NotImplemented
         return self.sort_on() < other.sort_on()
 
     def __le__(self, other):
+        if type(other) != CandidateSubr:
+            return NotImplemented
         return self.sort_on() <= other.sort_on()
 
     def __eq__(self, other):
+        if type(other) != CandidateSubr:
+            return NotImplemented
         return self.sort_on() == other.sort_on()
 
     def __ne__(self, other):
+        if type(other) != CandidateSubr:
+            return NotImplemented
         return self.sort_on() != other.sort_on()
 
     def __ge__(self, other):
+        if type(other) != CandidateSubr:
+            return NotImplemented
         return self.sort_on() >= other.sort_on()
 
     def __gt__(self, other):
+        if type(other) != CandidateSubr:
+            return NotImplemented
         return self.sort_on() > other.sort_on()
 
 
@@ -479,7 +493,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         for substr in substr_dict.values():
             substr._usages = 0
         for glyph_idx, enc in enumerate(encodings):
-            for start, stop, substr in enc:
+            for start, substr in enc:
                 if substr:
                     substr._usages += 1
 
@@ -535,7 +549,7 @@ def optimize_charstring(charstring, rev_keymap, substr_dict):
     cur_enc = next_enc[0]
     while cur_enc != None and cur_enc.idx < len(next_enc):
         if cur_enc.idx - last_idx > 1:
-            encoding.append((last_idx, cur_enc.idx, cur_enc.substr))
+            encoding.append((last_idx, cur_enc.substr))
         last_idx = cur_enc.idx
         cur_enc = next_enc[cur_enc.idx]
 
@@ -548,30 +562,35 @@ def apply_encoding(font, glyph_encoding):
     top_dict = font['CFF '].cff.topDictIndex[0]
 
     subrs = set()
-    subrs.update([it[2] for enc in glyph_encoding.values() for it in enc])
+    subrs.update([it[1] for enc in glyph_encoding.values() for it in enc])
     subrs = sorted(list(subrs), key=lambda s: s._usages, reverse=True)
+
+    bias = psCharStrings.calcSubrBias(subrs)
 
     for subr in subrs:
         subr._position = len(top_dict.Private.Subrs)
         program = [subr.rev_keymap[tok] for tok in subr.value()]
         if program[-1] not in ("endchar", "return"):
             program.append("return")
+        update_program(program, subr._encoding, bias)
         subr._program = program
         item = psCharStrings.T2CharString(program=program)
         top_dict.Private.Subrs.append(item)
 
-    bias = psCharStrings.calcSubrBias(top_dict.Private.Subrs)
-
     for glyph, enc in glyph_encoding.iteritems():
         charstring = top_dict.CharStrings[glyph]
-        offset = 0
-        for item in enc:
-            charstring.program[(item[0] - offset):(item[1] - offset)] = [item[2]._position - bias, "callsubr"]
-            offset += item[1] - item[0] - 2
+        update_program(charstring.program, enc, bias)
         if not (charstring.program[-1] == "endchar" \
-            or charstring.program[-1] == "callsubr" and enc[-1][2]._program[-1] == "endchar"):
+            or charstring.program[-1] == "callsubr" and enc[-1][1]._program[-1] == "endchar"):
             charstring.program.append("endchar")
 
+def update_program(program, encoding, bias):
+    offset = 0
+    for item in encoding:
+        assert hasattr(item[1], "_position"), "CandidateSubr without position in Subrs encountered"
+        program[(item[0] - offset):(item[0] + item[1].length - offset)] = [item[1]._position - bias, "callsubr"]
+        offset += item[1].length - 2
+    return program
 
 def compress_cff(font, out_file="compressed.otf"):
     """Compress a font using the iterative method and output result"""
@@ -579,6 +598,17 @@ def compress_cff(font, out_file="compressed.otf"):
     encoding = iterative_encode(font.getGlyphSet(), verbose=False)
     apply_encoding(font, encoding)
     font.save(out_file)
+
+def human_size(num):
+    """Return a number of bytes in human-readable units"""
+
+    num = float(num)
+    for s in ['bytes', 'KB', 'MB']:
+        if num < 1024.0:
+            return '%3.1f %s' % (num, s)
+        else:
+            num /= 1024.0
+    return '%3.1f %s' % (num, 'GB')
 
 def _test():
     """
@@ -589,6 +619,30 @@ def _test():
     [(0, 0), (1, 1), (0, 1), (0, 2), (1, 0), (1, 2)]
     """
 
+def main(filename=None, test=False, doctest=False, verbose_test=False):
+    if doctest:
+        import doctest
+        doctest.testmod(verbose=verbose_test)
+
+    if test:
+        from testCffCompressor import TestCffCompressor
+        test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
+        unittest.TextTestRunner().run(test_suite)
+
+    if filename:
+        font = TTFont(filename)
+        orig_size = os.path.getsize(filename)
+        # sf = SubstringFinder(font.getGlyphSet())
+        # substrings = sf.get_substrings()
+        # print("%d substrings found" % len(substrings))
+        # print
+        print("Compressing font through iterative_encode:")
+        out_name = "%s.compressed%s" % os.path.splitext(filename)
+
+        compress_cff(font, out_name)
+
+        comp_size = os.path.getsize(out_name)
+        print("Saved %s!" % human_size(orig_size - comp_size))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Subroutinize a font.')
@@ -600,22 +654,6 @@ if __name__ == '__main__':
     parser.add_argument('-v', required=False, action='store_true',
                         dest='verbose_test', default=False)
 
-    args = parser.parse_args()
+    kwargs = vars(parser.parse_args())
 
-    import doctest
-    doctest.testmod(verbose=args.verbose_test)
-
-    if args.test:
-        from testCffCompressor import TestCffCompressor
-        test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
-        unittest.TextTestRunner().run(test_suite)
-
-    if args.filename:
-        font = TTFont(args.filename)
-        sf = SubstringFinder(font.getGlyphSet())
-        substrings = sf.get_substrings()
-        print("%d substrings found" % len(substrings))
-        print
-        print("Running dynamic_allocate:")
-        dynamic_allocate(font.getGlyphSet())
-
+    main(**kwargs)
