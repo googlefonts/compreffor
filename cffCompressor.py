@@ -5,6 +5,7 @@
 import os
 import argparse
 import unittest
+import sys
 from collections import deque
 # import numpy as np
 from fontTools.ttLib import TTFont
@@ -159,17 +160,14 @@ class SubstringFinder(object):
     #   The first level separates by glyph
     #   The second level separates by token
     #       in a glyph's charstring
-    bucket_for = None
     alphabet_size = None
     length = None
-    keymap = None
     rev_keymap = None
     glyph_set_keys = None
 
     _completed_suffixes = False
 
     def __init__(self, glyph_set):
-        self.keymap = {} # maps charstring tokens -> simple integer alphabet
         self.rev_keymap = [] # reversed keymap
         #TODO: make above a numpy array
         self.data = []
@@ -194,6 +192,8 @@ class SubstringFinder(object):
 
         self.glyph_set_keys = glyph_set.keys()
 
+        keymap = {} # maps charstring tokens -> simple integer alphabet
+
         next_key = 0
 
         for k in self.glyph_set_keys:
@@ -211,11 +211,11 @@ class SubstringFinder(object):
                     # the following.
                     _, tokennext = next(piter)
                     tok = '%s %s' % (tok, tokennext)
-                if not tok in self.keymap:
-                    self.keymap[tok] = next_key
+                if not tok in keymap:
+                    keymap[tok] = next_key
                     self.rev_keymap.append(tok)
                     next_key += 1
-                program.append(self.keymap[tok])
+                program.append(keymap[tok])
 
             self.data.append(tuple(program))
 
@@ -434,6 +434,12 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     substrings = sf.get_substrings(min_freq=0, check_positive=(not test_mode), sort_by_length=True)
     substr_dict = {}
 
+    data = sf.data
+    rev_keymap = sf.rev_keymap
+    glyph_set_keys = sf.glyph_set_keys
+
+    sf = None # garbage collect unnecessary stuff
+
     import time; start_time = time.time()
 
     # set up dictionary with initial values
@@ -445,17 +451,17 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         substr_dict[substr.value()] = substr
 
     # encoding array to store chosen encodings
-    encodings = [None] * len(sf.data)
+    encodings = [None] * len(data)
 
     for run_count in range(2):
         # calibrate prices
-        for substr in substr_dict.values():
+        for substr in substrings:
             marg_cost = float(substr._adjusted_cost) / (substr._usages + K)
             substr._price = marg_cost * ALPHA + substr._price * (1 - ALPHA)
 
         # minimize charstring costs in current market through DP
-        for idx, charstring in enumerate(sf.data):
-            ans = optimize_charstring(charstring, sf.rev_keymap, substr_dict)
+        for idx, charstring in enumerate(data):
+            ans = optimize_charstring(charstring, rev_keymap, substr_dict)
             
             encodings[idx] = tuple(ans["encoding"])
 
@@ -465,7 +471,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
         # minimize substring costs
         for substr in substrings:
-            ans = optimize_charstring(substr.value(), sf.rev_keymap, substr_dict)
+            ans = optimize_charstring(substr.value(), rev_keymap, substr_dict)
             substr._encoding = ans["encoding"]
             substr._adjusted_cost = ans["market_cost"]
 
@@ -475,10 +481,10 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
 
         # update substring frequencies based on cost minimization
-        for substr in substr_dict.values():
+        for substr in substrings:
             substr._usages = 0
 
-        for calling_substr in substr_dict.values():
+        for calling_substr in substrings:
             for start, substr in calling_substr._encoding:
                 if substr:
                     substr._usages += 1
@@ -492,7 +498,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
 
-    return dict((sf.glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings)))
+    return dict((glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings)))
 
 class EncodingItem:
     idx = -1
@@ -505,7 +511,7 @@ class EncodingItem:
     def __len__(self):
         return len(self.substr) if self.substr else 1
 
-def optimize_charstring(charstring, rev_keymap, substr_dict):
+def optimize_charstring(charstring, rev_keymap, substr_dict, verbose=False):
     """Optimize a charstring (encoded using inverse ofrev_keymap) using
     the substrings in substr_dict. This is the Dynamic Programming portion
     of `iterative_encode`."""
@@ -543,6 +549,8 @@ def optimize_charstring(charstring, rev_keymap, substr_dict):
         last_idx = cur_enc.idx
         cur_enc = next_enc[cur_enc.idx]
 
+    if verbose:
+        sys.stdout.write("."); sys.stdout.flush()
     return {"encoding": encoding, "market_cost": market_cost}
 
 def apply_encoding(font, glyph_encoding):
