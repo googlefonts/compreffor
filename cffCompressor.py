@@ -462,14 +462,13 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         encodings = [[(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in i["encoding"]] for i in encodings]
 
         # minimize substring costs
-        for substr in substrings:
-            ans = optimize_charstring(substr.value(), sf.rev_keymap, substr_dict)
-            substr._encoding = ans["encoding"]
-            substr._adjusted_cost = ans["market_cost"]
-
-            if verbose:
-                print "Substring %s: market_cost=%f, encoding=%s" % \
-                        (substr.value(), ans["market_cost"], ans["encoding"])
+        substr_encodings = pool.map(functools.partial(optimize_charstring, 
+                                               rev_keymap=sf.rev_keymap,
+                                               substr_dict=substr_dict),
+                                    [s.value() for s in substrings])
+        for substr, result in zip(substrings, substr_encodings):
+            substr._encoding = result["encoding"]
+            substr._adjusted_cost = result["market_cost"]
 
         # update substring frequencies based on cost minimization
         for substr in substr_dict.values():
