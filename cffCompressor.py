@@ -5,7 +5,9 @@
 import os
 import argparse
 import unittest
+import functools
 from collections import deque
+from multiprocessing import Pool
 # import numpy as np
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
@@ -405,7 +407,6 @@ class SubstringFinder(object):
         print("Took %gs (to sort)" % (time.time() - start_time))
         return self.substrings
 
-
 def iterative_encode(glyph_set, verbose=True, test_mode=False):
     """
     Choose a subroutinization encoding for all charstrings in
@@ -434,18 +435,18 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     substrings = sf.get_substrings(min_freq=0, check_positive=(not test_mode), sort_by_length=True)
     substr_dict = {}
 
+    pool = Pool(processes=12)
+
     import time; start_time = time.time()
 
     # set up dictionary with initial values
-    for substr in substrings:
+    for idx, substr in enumerate(substrings):
         substr._adjusted_cost = substr.cost()
         substr._price = substr._adjusted_cost
         substr._usages = substr.freq # this is the frequency that the substring appears, 
                                     # not necessarily used
+        substr._list_idx = idx
         substr_dict[substr.value()] = substr
-
-    # encoding array to store chosen encodings
-    encodings = [None] * len(sf.data)
 
     for run_count in range(2):
         # calibrate prices
@@ -454,14 +455,11 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
             substr._price = marg_cost * ALPHA + substr._price * (1 - ALPHA)
 
         # minimize charstring costs in current market through DP
-        for idx, charstring in enumerate(sf.data):
-            ans = optimize_charstring(charstring, sf.rev_keymap, substr_dict)
-            
-            encodings[idx] = tuple(ans["encoding"])
-
-            if verbose:
-                print "Charstring %s: market_cost=%f, encoding=%s" % \
-                        (charstring, ans["market_cost"], ans["encoding"])
+        encodings = pool.map(functools.partial(optimize_charstring, 
+                                               rev_keymap=sf.rev_keymap, 
+                                               substr_dict=substr_dict),
+                             sf.data)
+        encodings = [[(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in i["encoding"]] for i in encodings]
 
         # minimize substring costs
         for substr in substrings:
@@ -472,7 +470,6 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
             if verbose:
                 print "Substring %s: market_cost=%f, encoding=%s" % \
                         (substr.value(), ans["market_cost"], ans["encoding"])
-
 
         # update substring frequencies based on cost minimization
         for substr in substr_dict.values():
@@ -501,7 +498,7 @@ class EncodingItem:
         return len(self.substr) if self.substr else 1
 
 def optimize_charstring(charstring, rev_keymap, substr_dict):
-    """Optimize a charstring (encoded using inverse ofrev_keymap) using
+    """Optimize a charstring (encoded using inverse of rev_keymap) using
     the substrings in substr_dict. This is the Dynamic Programming portion
     of `iterative_encode`."""
 
