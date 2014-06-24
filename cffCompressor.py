@@ -9,9 +9,39 @@ import functools
 import sys
 from collections import deque
 from multiprocessing import Pool
-# import numpy as np
+from multiprocessing.managers import BaseManager, BaseProxy
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
+
+SINGLE_BYTE_OPS = set(['hstem',
+                       'vstem',
+                       'vmoveto',
+                       'rlineto',
+                       'hlineto',
+                       'vlineto',
+                       'rrcurveto',
+                       'callsubr',
+                       'return',
+                       'endchar',
+                       'blend',
+                       'hstemhm',
+                       'hintmask',
+                       'cntrmask',
+                       'rmoveto',
+                       'hmoveto',
+                       'vstemhm',
+                       'rcurveline',
+                       'rlinecurve',
+                       'vvcurveto',
+                       'hhcurveto',
+                     # 'shortint',  # not really an operatr
+                       'callgsubr',
+                       'vhcurveto',
+                       'hvcurveto'])
+
+
+class SubstrDictProxy(BaseProxy):
+    __exposed__ = ("get_idx_of",)
 
 class CandidateSubr(object):
     """
@@ -19,11 +49,15 @@ class CandidateSubr(object):
     repeated throughout many glyphs.
     """
 
-    length = None # length of substring
-    location = None # tuple of form (glyph_idx, start_pos) where a ref string starts
-    freq = None # number of times it appears
-    chstrings = None # chstrings from whence this substring came
-    rev_keymap = None # array from simple alphabet -> actual token
+    __slots__ = ["length", "location", "freq", "chstrings", "rev_keymap", "_CandidateSubr__cost",
+                 "_adjusted_cost", "_price", "_usages", "_list_idx", "_position", "_encoding",
+                 "_program"]
+
+    # length -- length of substring
+    # location -- tuple of form (glyph_idx, start_pos) where a ref string starts
+    # freq -- number of times it appears
+    # chstrings -- chstrings from whence this substring came
+    # rev_keymap -- array from simple alphabet -> actual token
 
     def __init__(self, length, ref_loc, freq=0, chstrings=None, rev_keymap=None):
         self.length = length
@@ -73,7 +107,7 @@ class CandidateSubr(object):
         return (  self.cost() * self.freq # avoided copies
                 - self.cost() # cost of subroutine body
                 - call_cost * self.freq # cost of calling
-                - subr_overhead) # cost of subr definition
+                - subr_overhead) # cost of subr definition\
 
     @staticmethod
     def tokenCost(token):
@@ -83,11 +117,19 @@ class CandidateSubr(object):
         if issubclass(tp, basestring):
             if token[:8] in ('hintmask', 'cntrmask'):
                 return 1 + len(token[8:])
-            return len(psCharStrings.T2CharString.opcodes[token])
+            elif token in SINGLE_BYTE_OPS:
+                return 1
+            else:
+                return 2
         elif tp == int:
-            return len(psCharStrings.encodeIntT2(token))
+            if -107 <= token <= 107:
+                return 1
+            elif 108 <= token <= 1131 or -1131 <= token <= -108:
+                return 2
+            else:
+                return 5
         elif tp == float:
-            return len(psCharStrings.encodeFixed(token))
+            return 5
         assert 0
 
     @staticmethod
@@ -158,37 +200,30 @@ class SubstringFinder(object):
     of `CandidateSubr`s.
     """
 
-    suffixes = None
-    data = None
-    # data is a 2-level array of charstrings:
-    #   The first level separates by glyph
-    #   The second level separates by token
-    #       in a glyph's charstring
-    alphabet_size = None
-    length = None
-    rev_keymap = None
-    glyph_set_keys = None
+    __slots__ = ["suffixes", "data", "alphabet_size", "length", "substrings",
+                 "rev_keymap", "glyph_set_keys", "_completed_suffixes"]
 
-    _completed_suffixes = False
+    # suffixes -- sorted array of suffixes
+    # data --
+    #   A 2-level array of charstrings:
+    #     - The first level separates by glyph
+    #     - The second level separates by token
+    #         in a glyph's charstring
+    # alphabet_size -- size of alphabet
+    # length -- sum of the lengths of the individual glyphstrings
+    # rev_keymap -- map from simple alphabet -> original tokens
+    # glyph_set_keys -- glyph_set_keys[i] gives the glyph id for data[i]
+    # _completed_suffixes -- boolean whether the suffix array is ready and sorted
 
     def __init__(self, glyph_set):
-        self.rev_keymap = [] # reversed keymap
-        #TODO: make above a numpy array
+        self.rev_keymap = []
         self.data = []
         self.suffixes = []
+        self.length = 0
 
         self.process_chstrings(glyph_set)
 
-        self.length = 0
-        for glyph_idx in xrange(len(self.data)):
-            chstr_len = len(self.data[glyph_idx])
-            self.length += chstr_len
-            self.suffixes.extend(
-                map(lambda x: (glyph_idx, x), range(chstr_len))
-                )
-
-        self.bucket_for = [[None for _ in xrange(len(self.data[i]))] \
-                                for i in xrange(len(self.data))]
+        self._completed_suffixes = False
 
 
     def process_chstrings(self, glyph_set):
@@ -221,6 +256,13 @@ class SubstringFinder(object):
                     next_key += 1
                 program.append(keymap[tok])
 
+            program = tuple(program)
+            chstr_len = len(program)
+            self.length += chstr_len
+            glyph_idx = len(self.data)
+            self.suffixes.extend(
+                    map(lambda x: (glyph_idx, x), range(chstr_len))
+                )
             self.data.append(tuple(program))
 
         self.alphabet_size = next_key
@@ -517,6 +559,9 @@ def optimize_charstring(charstring, rev_keymap, substr_dict, verbose=False):
     """Optimize a charstring (encoded using inverse ofrev_keymap) using
     the substrings in substr_dict. This is the Dynamic Programming portion
     of `iterative_encode`."""
+    # import cProfile
+    # pr = cProfile.Profile()
+    # pr.enable()
 
     results = [0] * (len(charstring) + 1)
     next_enc = [None] * len(charstring)
@@ -533,6 +578,7 @@ def optimize_charstring(charstring, rev_keymap, substr_dict, verbose=False):
                 option = \
                     CandidateSubr.string_cost([rev_keymap[t] \
                       for t in charstring[i:j]]) + results[j]
+                # option = 1 * (j - i) + results[j]
             
             if option < min_option:
                 min_option = option
@@ -546,10 +592,17 @@ def optimize_charstring(charstring, rev_keymap, substr_dict, verbose=False):
     last_idx = 0 
     cur_enc = next_enc[0]
     while cur_enc != None and cur_enc.idx < len(next_enc):
-        if cur_enc.idx - last_idx > 1:
+        if cur_enc.substr != None:
             encoding.append((last_idx, cur_enc.substr))
+        elif cur_enc.idx - last_idx > 1:
+            print "Weird charstring: %s" % (charstring,)
+            print "Weird index: %d" % (cur_enc.idx,)
         last_idx = cur_enc.idx
         cur_enc = next_enc[cur_enc.idx]
+
+    # pr.disable()
+    # pr.create_stats()
+    # pr.dump_stats("stats")
 
     if verbose:
         sys.stdout.write("."); sys.stdout.flush()
@@ -568,36 +621,42 @@ def apply_encoding(font, glyph_encoding):
     bias = psCharStrings.calcSubrBias(subrs)
 
     for subr in subrs:
-        subr._position = len(top_dict.Private.Subrs)
+        subr._position = len(top_dict.GlobalSubrs)
         program = [subr.rev_keymap[tok] for tok in subr.value()]
         if program[-1] not in ("endchar", "return"):
             program.append("return")
         update_program(program, subr._encoding, bias)
         subr._program = program
         item = psCharStrings.T2CharString(program=program)
-        top_dict.Private.Subrs.append(item)
+        top_dict.GlobalSubrs.append(item)
 
     for glyph, enc in glyph_encoding.iteritems():
         charstring = top_dict.CharStrings[glyph]
         update_program(charstring.program, enc, bias)
         if not (charstring.program[-1] == "endchar" \
-            or charstring.program[-1] == "callsubr" and enc[-1][1]._program[-1] == "endchar"):
+            or ((charstring.program[-1] == "callsubr" or charstring.program[-1] == "callgsubr") 
+                and enc[-1][1]._program[-1] == "endchar")):
             charstring.program.append("endchar")
 
 def update_program(program, encoding, bias):
     offset = 0
     for item in encoding:
         assert hasattr(item[1], "_position"), "CandidateSubr without position in Subrs encountered"
-        program[(item[0] - offset):(item[0] + item[1].length - offset)] = [item[1]._position - bias, "callsubr"]
+        program[(item[0] - offset):(item[0] + item[1].length - offset)] = [item[1]._position - bias, "callgsubr"]
         offset += item[1].length - 2
     return program
 
 def compress_cff(font, out_file="compressed.otf"):
     """Compress a font using the iterative method and output result"""
 
+    # from guppy import hpy
+    # hp = hpy()
+
     encoding = iterative_encode(font.getGlyphSet(), verbose=False)
     apply_encoding(font, encoding)
     font.save(out_file)
+
+    # print hp.heap()
 
 def human_size(num):
     """Return a number of bytes in human-readable units"""
