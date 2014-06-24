@@ -467,7 +467,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                substr_dict=substr_dict),
                                     [s.value() for s in substrings])
         for substr, result in zip(substrings, substr_encodings):
-            substr._encoding = result["encoding"]
+            substr._encoding = [(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in result["encoding"]]
             substr._adjusted_cost = result["market_cost"]
 
         # update substring frequencies based on cost minimization
