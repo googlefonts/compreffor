@@ -6,6 +6,7 @@ import os
 import argparse
 import unittest
 import functools
+import sys
 from collections import deque
 from multiprocessing import Pool
 # import numpy as np
@@ -94,21 +95,23 @@ class CandidateSubr(object):
         """Calculate the bytecode size of a T2 Charstring substring. Note:
         tokens are taken literally and are not remapped."""
 
-        global STRING_COST_CACHE
-        charstring = tuple(charstring)
+        return sum(map(CandidateSubr.tokenCost, charstring))
 
-        try:
-            cached = charstring in STRING_COST_CACHE
-        except NameError:
-            STRING_COST_CACHE = {}
-            cached = False
+        # global STRING_COST_CACHE
+        # charstring = tuple(charstring)
 
-        if cached:
-            return STRING_COST_CACHE[charstring]
-        else:
-            ret = sum(map(CandidateSubr.tokenCost, charstring))
-            STRING_COST_CACHE[charstring] = ret
-            return ret
+        # try:
+        #     cached = charstring in STRING_COST_CACHE
+        # except NameError:
+        #     STRING_COST_CACHE = {}
+        #     cached = False
+
+        # if cached:
+        #     return STRING_COST_CACHE[charstring]
+        # else:
+        #     ret = sum(map(CandidateSubr.tokenCost, charstring))
+        #     STRING_COST_CACHE[charstring] = ret
+        #     return ret
 
 
     sort_on = lambda self: -self.subr_saving()
@@ -161,17 +164,14 @@ class SubstringFinder(object):
     #   The first level separates by glyph
     #   The second level separates by token
     #       in a glyph's charstring
-    bucket_for = None
     alphabet_size = None
     length = None
-    keymap = None
     rev_keymap = None
     glyph_set_keys = None
 
     _completed_suffixes = False
 
     def __init__(self, glyph_set):
-        self.keymap = {} # maps charstring tokens -> simple integer alphabet
         self.rev_keymap = [] # reversed keymap
         #TODO: make above a numpy array
         self.data = []
@@ -196,6 +196,8 @@ class SubstringFinder(object):
 
         self.glyph_set_keys = glyph_set.keys()
 
+        keymap = {} # maps charstring tokens -> simple integer alphabet
+
         next_key = 0
 
         for k in self.glyph_set_keys:
@@ -213,11 +215,11 @@ class SubstringFinder(object):
                     # the following.
                     _, tokennext = next(piter)
                     tok = '%s %s' % (tok, tokennext)
-                if not tok in self.keymap:
-                    self.keymap[tok] = next_key
+                if not tok in keymap:
+                    keymap[tok] = next_key
                     self.rev_keymap.append(tok)
                     next_key += 1
-                program.append(self.keymap[tok])
+                program.append(keymap[tok])
 
             self.data.append(tuple(program))
 
@@ -429,13 +431,20 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     ALPHA = 0.1
     K = 1.0
+    PROCESSES = 12
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
     substrings = sf.get_substrings(min_freq=0, check_positive=(not test_mode), sort_by_length=True)
     substr_dict = {}
 
-    pool = Pool(processes=12)
+    pool = Pool(processes=PROCESSES)
+
+    data = sf.data
+    rev_keymap = sf.rev_keymap
+    glyph_set_keys = sf.glyph_set_keys
+
+    sf = None # garbage collect unnecessary stuff
 
     import time; start_time = time.time()
 
@@ -450,31 +459,34 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     for run_count in range(2):
         # calibrate prices
-        for substr in substr_dict.values():
+        for substr in substrings:
             marg_cost = float(substr._adjusted_cost) / (substr._usages + K)
             substr._price = marg_cost * ALPHA + substr._price * (1 - ALPHA)
 
         # minimize charstring costs in current market through DP
         encodings = pool.map(functools.partial(optimize_charstring, 
-                                               rev_keymap=sf.rev_keymap, 
-                                               substr_dict=substr_dict),
-                             sf.data)
+                                               rev_keymap=rev_keymap, 
+                                               substr_dict=substr_dict,
+                                               verbose=True),
+                             data)
         encodings = [[(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in i["encoding"]] for i in encodings]
 
         # minimize substring costs
         substr_encodings = pool.map(functools.partial(optimize_charstring, 
-                                               rev_keymap=sf.rev_keymap,
-                                               substr_dict=substr_dict),
+                                                      rev_keymap=rev_keymap,
+                                                      substr_dict=substr_dict,
+                                                      verbose=True),
                                     [s.value() for s in substrings])
         for substr, result in zip(substrings, substr_encodings):
             substr._encoding = [(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in result["encoding"]]
             substr._adjusted_cost = result["market_cost"]
+        substr_encodings = None # attempt to garbage collect this
 
         # update substring frequencies based on cost minimization
-        for substr in substr_dict.values():
+        for substr in substrings:
             substr._usages = 0
 
-        for calling_substr in substr_dict.values():
+        for calling_substr in substrings:
             for start, substr in calling_substr._encoding:
                 if substr:
                     substr._usages += 1
@@ -488,7 +500,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
 
-    return dict((sf.glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings)))
+    return dict((glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings)))
 
 class EncodingItem:
     idx = -1
@@ -501,8 +513,8 @@ class EncodingItem:
     def __len__(self):
         return len(self.substr) if self.substr else 1
 
-def optimize_charstring(charstring, rev_keymap, substr_dict):
-    """Optimize a charstring (encoded using inverse of rev_keymap) using
+def optimize_charstring(charstring, rev_keymap, substr_dict, verbose=False):
+    """Optimize a charstring (encoded using inverse ofrev_keymap) using
     the substrings in substr_dict. This is the Dynamic Programming portion
     of `iterative_encode`."""
 
@@ -539,6 +551,8 @@ def optimize_charstring(charstring, rev_keymap, substr_dict):
         last_idx = cur_enc.idx
         cur_enc = next_enc[cur_enc.idx]
 
+    if verbose:
+        sys.stdout.write("."); sys.stdout.flush()
     return {"encoding": encoding, "market_cost": market_cost}
 
 def apply_encoding(font, glyph_encoding):
