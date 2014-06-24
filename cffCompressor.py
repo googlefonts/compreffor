@@ -473,6 +473,11 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         # update substring frequencies based on cost minimization
         for substr in substr_dict.values():
             substr._usages = 0
+
+        for calling_substr in substr_dict.values():
+            for start, substr in calling_substr._encoding:
+                if substr:
+                    substr._usages += 1
         for glyph_idx, enc in enumerate(encodings):
             for start, substr in enc:
                 if substr:
