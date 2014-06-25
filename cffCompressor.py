@@ -40,9 +40,6 @@ SINGLE_BYTE_OPS = set(['hstem',
                        'hvcurveto'])
 
 
-class SubstrDictProxy(BaseProxy):
-    __exposed__ = ("get_idx_of",)
-
 class CandidateSubr(object):
     """
     Records a substring of a charstring that is generally
