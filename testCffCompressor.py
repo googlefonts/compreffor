@@ -30,11 +30,12 @@ class TestCffCompressor(unittest.TestCase):
         self.assertIsInstance(ans, dict)
 
         # don't care about CandidateSubr objects, just take their length
-        for k in ans.keys():
-            enc = [(i[0], i[1].length) for i in ans[k]]
-            ans[k] = tuple(enc)
+        encs = ans["glyph_encodings"]
+        for k in encs.keys():
+            enc = [(i[0], i[1].length) for i in encs[k]]
+            encs[k] = tuple(enc)
 
-        self.assertEqual(ans, {'a': ((0, 5),), 'b': ((1, 5),), 'c': ((0, 5),)})
+        self.assertEqual(encs, {'a': ((0, 5),), 'b': ((1, 5),), 'c': ((0, 5),)})
 
     def test_get_substrings_all(self):
         """Test get_substrings without restrictions"""
@@ -106,7 +107,7 @@ class TestCffCompressor(unittest.TestCase):
 
         cffCompressor.update_program(program, encoding, bias)
 
-        self.assertEqual(program, [7, 5, "callsubr", 8, 7, 0])
+        self.assertEqual(program, [7, 5, "callgsubr", 8, 7, 0])
 
     def test_update_program_multiple(self):
         """Test update_program with two replacements"""
@@ -121,7 +122,7 @@ class TestCffCompressor(unittest.TestCase):
 
         cffCompressor.update_program(program, encoding, bias)
 
-        self.assertEqual(program, [7, 5, "callsubr", 8, 21, "callsubr"])
+        self.assertEqual(program, [7, 5, "callgsubr", 8, 21, "callgsubr"])
 
     # ---
 
@@ -134,13 +135,6 @@ class TestCffCompressor(unittest.TestCase):
         self.assertEqual(tokenCost('flex'), 2)
         self.assertEqual(tokenCost(107), 1)
         self.assertEqual(tokenCost(108), 2)
-
-    def test_string_cost(self):
-        """Ensure an entire string can have its cost calculated"""
-
-        string_cost = cffCompressor.CandidateSubr.string_cost
-
-        self.assertEqual(string_cost((108, 'endchar')), 3)
 
     def test_candidatesubr_len(self):
         """Make sure len returns the correct length"""

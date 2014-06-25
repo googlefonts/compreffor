@@ -49,7 +49,7 @@ class CandidateSubr(object):
     repeated throughout many glyphs.
     """
 
-    __slots__ = ["length", "location", "freq", "chstrings", "rev_keymap", "_CandidateSubr__cost",
+    __slots__ = ["length", "location", "freq", "chstrings", "cost_map", "_CandidateSubr__cost",
                  "_adjusted_cost", "_price", "_usages", "_list_idx", "_position", "_encoding",
                  "_program"]
 
@@ -57,14 +57,14 @@ class CandidateSubr(object):
     # location -- tuple of form (glyph_idx, start_pos) where a ref string starts
     # freq -- number of times it appears
     # chstrings -- chstrings from whence this substring came
-    # rev_keymap -- array from simple alphabet -> actual token
+    # cost_map -- array from simple alphabet -> actual token
 
-    def __init__(self, length, ref_loc, freq=0, chstrings=None, rev_keymap=None):
+    def __init__(self, length, ref_loc, freq=0, chstrings=None, cost_map=None):
         self.length = length
         self.location = ref_loc
         self.freq = freq
         self.chstrings = chstrings
-        self.rev_keymap = rev_keymap
+        self.cost_map = cost_map
 
     def __len__(self):
         """Return the number of tokens in this substring"""
@@ -81,11 +81,11 @@ class CandidateSubr(object):
     def cost(self):
         """Return the size (in bytes) that the bytecode for this takes up"""
 
-        assert self.rev_keymap != None
+        assert self.cost_map != None
 
         try:
             if not hasattr(self, '__cost'):
-                self.__cost = self.string_cost([self.rev_keymap[t] for t in self.value()])
+                self.__cost = sum([self.cost_map[t] for t in self.value()])
             return self.__cost
         except:
             raise Exception('Translated token not recognized') 
@@ -131,29 +131,6 @@ class CandidateSubr(object):
         elif tp == float:
             return 5
         assert 0
-
-    @staticmethod
-    def string_cost(charstring):
-        """Calculate the bytecode size of a T2 Charstring substring. Note:
-        tokens are taken literally and are not remapped."""
-
-        return sum(map(CandidateSubr.tokenCost, charstring))
-
-        # global STRING_COST_CACHE
-        # charstring = tuple(charstring)
-
-        # try:
-        #     cached = charstring in STRING_COST_CACHE
-        # except NameError:
-        #     STRING_COST_CACHE = {}
-        #     cached = False
-
-        # if cached:
-        #     return STRING_COST_CACHE[charstring]
-        # else:
-        #     ret = sum(map(CandidateSubr.tokenCost, charstring))
-        #     STRING_COST_CACHE[charstring] = ret
-        #     return ret
 
 
     sort_on = lambda self: -self.subr_saving()
@@ -201,7 +178,8 @@ class SubstringFinder(object):
     """
 
     __slots__ = ["suffixes", "data", "alphabet_size", "length", "substrings",
-                 "rev_keymap", "glyph_set_keys", "_completed_suffixes"]
+                 "rev_keymap", "glyph_set_keys", "_completed_suffixes",
+                 "cost_map"]
 
     # suffixes -- sorted array of suffixes
     # data --
@@ -212,11 +190,13 @@ class SubstringFinder(object):
     # alphabet_size -- size of alphabet
     # length -- sum of the lengths of the individual glyphstrings
     # rev_keymap -- map from simple alphabet -> original tokens
+    # cost_map -- map from simple alphabet -> bytecost of token
     # glyph_set_keys -- glyph_set_keys[i] gives the glyph id for data[i]
     # _completed_suffixes -- boolean whether the suffix array is ready and sorted
 
     def __init__(self, glyph_set):
         self.rev_keymap = []
+        self.cost_map = []
         self.data = []
         self.suffixes = []
         self.length = 0
@@ -253,6 +233,7 @@ class SubstringFinder(object):
                 if not tok in keymap:
                     keymap[tok] = next_key
                     self.rev_keymap.append(tok)
+                    self.cost_map.append(CandidateSubr.tokenCost(tok))
                     next_key += 1
                 program.append(keymap[tok])
 
@@ -374,7 +355,7 @@ class SubstringFinder(object):
                                        self.suffixes[start_indices[l]],
                                        i - start_indices[l],
                                        self.data,
-                                       self.rev_keymap)
+                                       self.cost_map)
                 if substr.subr_saving() > 0:
                     self.substrings.append(substr)
                 # else:
@@ -435,7 +416,7 @@ class SubstringFinder(object):
                                        self.suffixes[start_idx],
                                        i - start_idx,
                                        self.data,
-                                       self.rev_keymap)
+                                       self.cost_map)
                 if substr.subr_saving() > 0 or not check_positive:
                     self.substrings.append(substr)
 
@@ -484,6 +465,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     data = sf.data
     rev_keymap = sf.rev_keymap
+    cost_map = sf.cost_map
     glyph_set_keys = sf.glyph_set_keys
 
     sf = None # garbage collect unnecessary stuff
@@ -506,8 +488,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
             substr._price = marg_cost * ALPHA + substr._price * (1 - ALPHA)
 
         # minimize charstring costs in current market through DP
-        encodings = pool.map(functools.partial(optimize_charstring, 
-                                               rev_keymap=rev_keymap, 
+        encodings = pool.map(functools.partial(optimize_charstring,
+                                               cost_map=cost_map,
                                                substr_dict=substr_dict,
                                                verbose=True),
                              data)
@@ -515,7 +497,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
         # minimize substring costs
         substr_encodings = pool.map(functools.partial(optimize_charstring, 
-                                                      rev_keymap=rev_keymap,
+                                                      cost_map=cost_map,
                                                       substr_dict=substr_dict,
                                                       verbose=True),
                                     [s.value() for s in substrings])
@@ -542,7 +524,22 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
 
-    return dict((glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings)))
+    subrs = set()
+    subrs.update([it[1] for enc in encodings for it in enc])
+    subrs = sorted(list(subrs), key=lambda s: s._usages, reverse=True)
+
+    bias = psCharStrings.calcSubrBias(subrs)
+
+    for idx, subr in enumerate(subrs):
+        subr._position = idx
+        program = [rev_keymap[tok] for tok in subr.value()]
+        if program[-1] not in ("endchar", "return"):
+            program.append("return")
+        update_program(program, subr._encoding, bias)
+        subr._program = program
+
+    return {"glyph_encodings": dict((glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings))),
+            "subroutines": subrs}
 
 class EncodingItem:
     idx = -1
@@ -555,8 +552,8 @@ class EncodingItem:
     def __len__(self):
         return len(self.substr) if self.substr else 1
 
-def optimize_charstring(charstring, rev_keymap, substr_dict, verbose=False):
-    """Optimize a charstring (encoded using inverse ofrev_keymap) using
+def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
+    """Optimize a charstring (encoded using keymap) using
     the substrings in substr_dict. This is the Dynamic Programming portion
     of `iterative_encode`."""
     # import cProfile
@@ -568,17 +565,16 @@ def optimize_charstring(charstring, rev_keymap, substr_dict, verbose=False):
     for i in reversed(range(len(charstring))):
         min_option = float('inf')
         min_enc = EncodingItem(len(charstring))
+        cur_cost = 0
         for j in range(i + 1, len(charstring) + 1):
+            cur_cost += cost_map[charstring[j - 1]]
             if charstring[i:j] in substr_dict:
                 substr = substr_dict[charstring[i:j]]
                 option = substr._price + results[j]
             else:
                 # note: must not be branching, so just make _price actual cost
                 substr = None
-                option = \
-                    CandidateSubr.string_cost([rev_keymap[t] \
-                      for t in charstring[i:j]]) + results[j]
-                # option = 1 * (j - i) + results[j]
+                option = cur_cost + results[j]
             
             if option < min_option:
                 min_option = option
@@ -608,29 +604,19 @@ def optimize_charstring(charstring, rev_keymap, substr_dict, verbose=False):
         sys.stdout.write("."); sys.stdout.flush()
     return {"encoding": encoding, "market_cost": market_cost}
 
-def apply_encoding(font, glyph_encoding):
+def apply_encoding(font, glyph_encodings, subrs):
     """Apply the result of iterative_encode to a TTFont"""
 
     assert len(font['CFF '].cff.topDictIndex) == 1
     top_dict = font['CFF '].cff.topDictIndex[0]
 
-    subrs = set()
-    subrs.update([it[1] for enc in glyph_encoding.values() for it in enc])
-    subrs = sorted(list(subrs), key=lambda s: s._usages, reverse=True)
-
     bias = psCharStrings.calcSubrBias(subrs)
 
     for subr in subrs:
-        subr._position = len(top_dict.GlobalSubrs)
-        program = [subr.rev_keymap[tok] for tok in subr.value()]
-        if program[-1] not in ("endchar", "return"):
-            program.append("return")
-        update_program(program, subr._encoding, bias)
-        subr._program = program
-        item = psCharStrings.T2CharString(program=program)
+        item = psCharStrings.T2CharString(program=subr._program)
         top_dict.GlobalSubrs.append(item)
 
-    for glyph, enc in glyph_encoding.iteritems():
+    for glyph, enc in glyph_encodings.iteritems():
         charstring = top_dict.CharStrings[glyph]
         update_program(charstring.program, enc, bias)
         if not (charstring.program[-1] == "endchar" \
@@ -652,8 +638,10 @@ def compress_cff(font, out_file="compressed.otf"):
     # from guppy import hpy
     # hp = hpy()
 
-    encoding = iterative_encode(font.getGlyphSet(), verbose=False)
-    apply_encoding(font, encoding)
+    ans = iterative_encode(font.getGlyphSet(), verbose=False)
+    encoding = ans["glyph_encodings"]
+    subrs = ans["subroutines"]
+    apply_encoding(font, encoding, subrs)
     font.save(out_file)
 
     # print hp.heap()
