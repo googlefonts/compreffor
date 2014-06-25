@@ -147,3 +147,54 @@ class TestCffCompressor(unittest.TestCase):
         expected_value = (348, 374, 'rmoveto')
 
         self.assertEqual(self.cand_subr.value(), expected_value)
+
+
+
+
+def test_compression_integrity(orignal_file, compressed_file):
+    from fontTools.ttLib import TTFont
+    from fontTools.subset import _DecompressingT2Decompiler, _DehintingT2Decompiler
+    from fontTools.pens import basePen
+
+    orig_font = TTFont(orignal_file)
+    orig_gset = orig_font.getGlyphSet()
+    comp_font = TTFont(compressed_file)
+    comp_gset = comp_font.getGlyphSet()
+
+    assert orig_gset.keys() == comp_gset.keys()
+
+    for k in comp_font["CFF "].cff.keys():
+        f = comp_font["CFF "].cff[k]
+        cs = f.CharStrings
+
+        css = set()
+        for g in f.charset:
+            c,sel = cs.getItemAndSelector(g)
+            # Make sure it's decompiled.  We want our "decompiler" to walk
+            # the program, not the bytecode.
+            c.draw(basePen.NullPen())
+            subrs = getattr(c.private, "Subrs", [])
+            decompiler = _DehintingT2Decompiler(css, subrs, c.globalSubrs)
+            decompiler.execute(c)
+        for charstring in css:
+            charstring.drop_hints()
+        del css
+
+        for g in f.charset:
+            c,sel = cs.getItemAndSelector(g)
+            subrs = getattr(c.private, "Subrs", [])
+            decompiler = _DecompressingT2Decompiler(subrs, c.globalSubrs)
+            decompiler.execute(c)
+            c.program = c._decompressed
+
+    passed = True
+    for g in orig_gset.keys():
+        orig_gset[g].decompile()
+        if not (orig_gset[g].program == comp_gset[g].program):
+            print "Difference found in glyph '%s'" % (g,)
+            passed = False
+
+    if passed:
+        print "Fonts match!"
+    else:
+        print "Fonts have differences :("

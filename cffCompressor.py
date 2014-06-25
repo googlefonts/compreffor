@@ -452,6 +452,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     ALPHA = 0.1
     K = 1.0
     PROCESSES = 12
+    NROUNDS = 3
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -478,7 +479,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         substr._list_idx = idx
         substr_dict[substr.value()] = substr
 
-    for run_count in range(2):
+    for run_count in range(NROUNDS):
         # calibrate prices
         for substr in substrings:
             marg_cost = float(substr._adjusted_cost) / (substr._usages + K)
@@ -663,7 +664,7 @@ def _test():
     [(0, 0), (1, 1), (0, 1), (0, 2), (1, 0), (1, 2)]
     """
 
-def main(filename=None, test=False, doctest=False, verbose_test=False):
+def main(filename=None, test=False, doctest=False, verbose_test=False, check=False):
     if doctest:
         import doctest
         doctest.testmod(verbose=verbose_test)
@@ -673,30 +674,41 @@ def main(filename=None, test=False, doctest=False, verbose_test=False):
         test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
         unittest.TextTestRunner().run(test_suite)
 
-    if filename:
-        font = TTFont(filename)
-        orig_size = os.path.getsize(filename)
+    if filename and len(filename) == 1:
+        font = TTFont(filename[0])
+        orig_size = os.path.getsize(filename[0])
         # sf = SubstringFinder(font.getGlyphSet())
         # substrings = sf.get_substrings()
         # print("%d substrings found" % len(substrings))
         # print
         print("Compressing font through iterative_encode:")
-        out_name = "%s.compressed%s" % os.path.splitext(filename)
+        out_name = "%s.compressed%s" % os.path.splitext(filename[0])
 
         compress_cff(font, out_name)
 
         comp_size = os.path.getsize(out_name)
         print("Saved %s!" % human_size(orig_size - comp_size))
 
+    if check:
+        from testCffCompressor import test_compression_integrity
+        assert len(filename) <= 2
+
+        if len(filename) == 1:
+            test_compression_integrity(filename[0], out_name)
+        else:
+            test_compression_integrity(*filename)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Subroutinize a font.')
-    parser.add_argument('filename', help='Where to find the font', nargs='?')
+    parser.add_argument('filename', help='Where to find the font', nargs='*')
     parser.add_argument('-t', required=False, action='store_true',
                         dest='test', default=False)
     parser.add_argument('-d', required=False, action='store_true',
                         dest='doctest', default=False)
     parser.add_argument('-v', required=False, action='store_true',
                         dest='verbose_test', default=False)
+    parser.add_argument('-c', required=False, action='store_true',
+                        dest='check', default=False)
 
     kwargs = vars(parser.parse_args())
 
