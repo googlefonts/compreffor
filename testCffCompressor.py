@@ -198,3 +198,63 @@ def test_compression_integrity(orignal_file, compressed_file):
         print "Fonts match!"
     else:
         print "Fonts have differences :("
+
+def test_call_depth(compressed_file):
+    from fontTools.ttLib import TTFont
+    from fontTools.misc import psCharStrings
+
+    f = TTFont(compressed_file)
+
+    for g in f.getGlyphSet().values():
+        g.decompile()
+
+    class track_info: pass
+
+    track_info.passed = True
+    track_info.max_for_all = 0
+
+    gsubrs = f["CFF "].cff.GlobalSubrs
+    gbias = psCharStrings.calcSubrBias(gsubrs)
+
+    def increment_subr_depth(subr, depth, subrs=None, bias=None):
+        subr._max_call_depth = depth
+        if subr._max_call_depth > 10:
+            track_info.passed = False
+        if subr._max_call_depth > track_info.max_for_all:
+            track_info.max_for_all = subr._max_call_depth
+        program = subr.program
+
+        last = program[0]
+        for tok in program[1:]:
+            if tok == "callsubr":
+                assert type(last) == int
+                next_subr = subrs[last + bias]
+                if (not hasattr(next_subr, "_max_call_depth") or 
+                        next_subr._max_call_depth < depth + 1):
+                    increment_subr_depth(next_subr, depth + 1, subrs, bias)
+            elif tok == "callgsubr":
+                assert type(last) == int
+                next_subr = gsubrs[last + gbias]
+                if (not hasattr(next_subr, "_max_call_depth") or 
+                        next_subr._max_call_depth < depth + 1):
+                    increment_subr_depth(next_subr, depth + 1)
+
+    def check_subrs(subrs):
+        bias = psCharStrings.calcSubrBias(subrs)
+
+        for idx, subr in enumerate(subrs):
+            # if idx == 58:
+            #     import pdb; pdb.set_trace()
+            if not hasattr(subr, "_max_call_depth"):
+                increment_subr_depth(subr, 1, subrs, bias)
+
+    check_subrs(gsubrs)
+
+    for td in f["CFF "].cff.topDictIndex:
+        if hasattr(td, "Private"):
+            check_subrs(td.Private.Subrs)
+
+    if track_info.passed:
+        print "Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all
+    else:
+        print "Subroutine nesting depth too deep :( [max nesting depth of %d]" % track_info.max_for_all

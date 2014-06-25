@@ -690,13 +690,15 @@ def main(filename=None, test=False, doctest=False, verbose_test=False, check=Fal
         print("Saved %s!" % human_size(orig_size - comp_size))
 
     if check:
-        from testCffCompressor import test_compression_integrity
+        from testCffCompressor import test_compression_integrity, test_call_depth
         assert len(filename) <= 2
 
         if len(filename) == 1:
             test_compression_integrity(filename[0], out_name)
+            test_call_depth(out_name)
         else:
             test_compression_integrity(*filename)
+            test_call_depth(filename[1])
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Subroutinize a font.')
