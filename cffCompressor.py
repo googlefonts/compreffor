@@ -455,18 +455,31 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     should each be subroutinized.
     """
 
+    import cProfile
+    pr = cProfile.Profile()
+    pr.enable()
+    SINGLE_PROCESS = True
+
     ALPHA = 0.1
     K = 0.1
     PROCESSES = 12
-    NROUNDS = 3
+    NROUNDS = 1
     POOL_CHUNKSIZE = 80
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
-    substrings = sf.get_substrings(min_freq=0, check_positive=(not test_mode), sort_by_length=True)
+    if test_mode:
+        substrings = sf.get_substrings(min_freq=0, check_positive=False, sort_by_length=True)
+    else:
+        substrings = sf.get_substrings(min_freq=2, check_positive=True, sort_by_length=True)
     substr_dict = {}
 
-    pool = Pool(processes=PROCESSES)
+    if not SINGLE_PROCESS:
+        pool = Pool(processes=PROCESSES)
+    else:
+        class DummyPool: pass
+        pool = DummyPool()
+        pool.map = lambda f, l, chunksize: map(f, l)
 
     data = sf.data
     rev_keymap = sf.rev_keymap
@@ -559,19 +572,12 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         update_program(program, subr._encoding, bias)
         subr._program = program
 
+    pr.disable()
+    pr.create_stats()
+    pr.dump_stats("totalstats")
+
     return {"glyph_encodings": dict((glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings))),
             "subroutines": subrs}
-
-class EncodingItem:
-    idx = -1
-    substr = None
-
-    def __init__(self, idx, substr=None):
-        self.idx = idx
-        self.substr = substr
-
-    def __len__(self):
-        return len(self.substr) if self.substr else 1
 
 def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
     """Optimize a charstring (encoded using keymap) using
@@ -581,11 +587,13 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
     # pr = cProfile.Profile()
     # pr.enable()
 
-    results = [0] * (len(charstring) + 1)
-    next_enc = [None] * len(charstring)
+    results = [0 for _ in xrange(len(charstring) + 1)]
+    next_enc_idx = [None for _ in xrange(len(charstring))]
+    next_enc_substr = [None for _ in xrange(len(charstring))]
     for i in reversed(range(len(charstring))):
         min_option = float('inf')
-        min_enc = EncodingItem(len(charstring))
+        min_enc_idx = len(charstring)
+        min_enc_substr = None
         cur_cost = 0
         for j in range(i + 1, len(charstring) + 1):
             cur_cost += cost_map[charstring[j - 1]]
@@ -599,23 +607,28 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
             
             if option < min_option:
                 min_option = option
-                min_enc = EncodingItem(j, substr)
+                min_enc_idx = j
+                min_enc_substr = substr
 
         results[i] = min_option
-        next_enc[i] = min_enc
+        next_enc_idx[i] = min_enc_idx
+        next_enc_substr[i] = min_enc_substr
 
     market_cost = results[0]
     encoding = []
     last_idx = 0 
-    cur_enc = next_enc[0]
-    while cur_enc != None and cur_enc.idx < len(next_enc):
-        if cur_enc.substr != None:
-            encoding.append((last_idx, cur_enc.substr))
-        elif cur_enc.idx - last_idx > 1:
+    cur_enc_idx = next_enc_idx[0]
+    cur_enc_substr = next_enc_substr[0]
+    last = len(next_enc_idx)
+    while cur_enc_idx < last:
+        if cur_enc_substr != None:
+            encoding.append((last_idx, cur_enc_substr))
+        elif cur_enc_idx - last_idx > 1:
             print "Weird charstring: %s" % (charstring,)
-            print "Weird index: %d" % (cur_enc.idx,)
-        last_idx = cur_enc.idx
-        cur_enc = next_enc[cur_enc.idx]
+            print "Weird index: %d" % (cur_enc_idx,)
+        last_idx = cur_enc_idx
+        cur_enc_substr = next_enc_substr[cur_enc_idx]
+        cur_enc_idx = next_enc_idx[cur_enc_idx]
 
     # pr.disable()
     # pr.create_stats()
@@ -624,7 +637,7 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
     if verbose:
         sys.stdout.write("."); sys.stdout.flush()
     return {"encoding": encoding, "market_cost": market_cost}
-
+    
 def apply_encoding(font, glyph_encodings, subrs):
     """Apply the result of iterative_encode to a TTFont"""
 
