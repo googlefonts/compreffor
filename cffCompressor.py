@@ -455,15 +455,15 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     should each be subroutinized.
     """
 
-    import cProfile
-    pr = cProfile.Profile()
-    pr.enable()
-    SINGLE_PROCESS = True
+    # import cProfile
+    # pr = cProfile.Profile()
+    # pr.enable()
+    SINGLE_PROCESS = False
 
     ALPHA = 0.1
     K = 0.1
     PROCESSES = 12
-    NROUNDS = 1
+    NROUNDS = 3
     POOL_CHUNKSIZE = 80
 
     # generate substrings for marketplace
@@ -572,9 +572,9 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         update_program(program, subr._encoding, bias)
         subr._program = program
 
-    pr.disable()
-    pr.create_stats()
-    pr.dump_stats("totalstats")
+    # pr.disable()
+    # pr.create_stats()
+    # pr.dump_stats("totalstats")
 
     return {"glyph_encodings": dict((glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings))),
             "subroutines": subrs}
