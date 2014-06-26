@@ -87,7 +87,7 @@ class CandidateSubr(object):
         except:
             raise Exception('Translated token not recognized') 
 
-    def subr_saving(self, call_cost=5, subr_overhead=3):
+    def subr_saving(self, use_usages=False, call_cost=5, subr_overhead=3):
         """
         Return the savings that will be realized by subroutinizing
         this substring.
@@ -97,13 +97,18 @@ class CandidateSubr(object):
         subr_overhead -- the cost to define a subroutine
         """
 
+        if use_usages:
+            amt = self._usages
+        else:
+            amt = self.freq
+
         #TODO:
         # - If substring ends in "endchar", we need no "return"
         #   added and as such subr_overhead will be one byte
         #   smaller.
-        return (  self.cost() * self.freq # avoided copies
+        return (  self.cost() * amt # avoided copies
                 - self.cost() # cost of subroutine body
-                - call_cost * self.freq # cost of calling
+                - call_cost * amt # cost of calling
                 - subr_overhead) # cost of subr definition\
 
     @staticmethod
@@ -421,7 +426,8 @@ class SubstringFinder(object):
                 start_indices.append((min_l, i - 1))
 
         print("Took %gs (to extract substrings)" % (time.time() - start_time)); start_time = time.time()
-        print("Sorting")
+        print("%d substrings found" % len(self.substrings))
+        print("Sorting...")
         if sort_by_length:
             self.substrings.sort(key=lambda s: len(s))
         else:
@@ -450,9 +456,10 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     """
 
     ALPHA = 0.1
-    K = 1.0
+    K = 0.1
     PROCESSES = 12
     NROUNDS = 3
+    CUTDOWN = 0.5
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -489,7 +496,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         encodings = pool.map(functools.partial(optimize_charstring,
                                                cost_map=cost_map,
                                                substr_dict=substr_dict,
-                                               verbose=True),
+                                               verbose=verbose),
                              data)
         encodings = [[(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in i["encoding"]] for i in encodings]
 
@@ -497,7 +504,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         substr_encodings = pool.map(functools.partial(optimize_charstring, 
                                                       cost_map=cost_map,
                                                       substr_dict=substr_dict,
-                                                      verbose=True),
+                                                      verbose=verbose),
                                     [s.value() for s in substrings])
         for substr, result in zip(substrings, substr_encodings):
             substr._encoding = [(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in result["encoding"]]
@@ -518,6 +525,20 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                     substr._usages += 1
 
         print "Round %d Done!" % (run_count + 1)
+
+        cutdown_time = time.time()
+        if run_count == NROUNDS - 2:
+            bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True) <= 0]
+            substrings = [s for s in substrings if s.subr_saving(use_usages=True) > 0]
+            for substr in bad_substrings:
+                del substr_dict[substr.value()]
+            for idx, s in enumerate(substrings):
+                s._list_idx = idx
+            if verbose:
+                print "%d substrings with non-positive savings removed" % len(bad_substrings)
+                print "(%d had positive usage)" % len([s for s in bad_substrings if s._usages > 0])
+        print "Took %gs to cutdown" % (time.time() - cutdown_time)
+
         print
 
     print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
@@ -636,7 +657,7 @@ def compress_cff(font, out_file="compressed.otf"):
     # from guppy import hpy
     # hp = hpy()
 
-    ans = iterative_encode(font.getGlyphSet(), verbose=False)
+    ans = iterative_encode(font.getGlyphSet(), verbose=True)
     encoding = ans["glyph_encodings"]
     subrs = ans["subroutines"]
     apply_encoding(font, encoding, subrs)
