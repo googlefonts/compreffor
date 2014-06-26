@@ -459,7 +459,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     K = 0.1
     PROCESSES = 12
     NROUNDS = 3
-    CUTDOWN = 0.5
+    POOL_CHUNKSIZE = 80
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -497,7 +497,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                cost_map=cost_map,
                                                substr_dict=substr_dict,
                                                verbose=verbose),
-                             data)
+                             data,
+                             chunksize=POOL_CHUNKSIZE)
         encodings = [[(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in i["encoding"]] for i in encodings]
 
         # minimize substring costs
@@ -505,7 +506,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                       cost_map=cost_map,
                                                       substr_dict=substr_dict,
                                                       verbose=verbose),
-                                    [s.value() for s in substrings])
+                                    [s.value() for s in substrings],
+                                    chunksize=POOL_CHUNKSIZE)
         for substr, result in zip(substrings, substr_encodings):
             substr._encoding = [(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in result["encoding"]]
             substr._adjusted_cost = result["market_cost"]
