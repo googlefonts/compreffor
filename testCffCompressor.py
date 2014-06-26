@@ -30,11 +30,12 @@ class TestCffCompressor(unittest.TestCase):
         self.assertIsInstance(ans, dict)
 
         # don't care about CandidateSubr objects, just take their length
-        for k in ans.keys():
-            enc = [(i[0], i[1].length) for i in ans[k]]
-            ans[k] = tuple(enc)
+        encs = ans["glyph_encodings"]
+        for k in encs.keys():
+            enc = [(i[0], i[1].length) for i in encs[k]]
+            encs[k] = tuple(enc)
 
-        self.assertEqual(ans, {'a': ((0, 5),), 'b': ((1, 5),), 'c': ((0, 5),)})
+        self.assertEqual(encs, {'a': ((0, 5),), 'b': ((1, 5),), 'c': ((0, 5),)})
 
     def test_get_substrings_all(self):
         """Test get_substrings without restrictions"""
@@ -106,7 +107,7 @@ class TestCffCompressor(unittest.TestCase):
 
         cffCompressor.update_program(program, encoding, bias)
 
-        self.assertEqual(program, [7, 5, "callsubr", 8, 7, 0])
+        self.assertEqual(program, [7, 5, "callgsubr", 8, 7, 0])
 
     def test_update_program_multiple(self):
         """Test update_program with two replacements"""
@@ -121,7 +122,7 @@ class TestCffCompressor(unittest.TestCase):
 
         cffCompressor.update_program(program, encoding, bias)
 
-        self.assertEqual(program, [7, 5, "callsubr", 8, 21, "callsubr"])
+        self.assertEqual(program, [7, 5, "callgsubr", 8, 21, "callgsubr"])
 
     # ---
 
@@ -135,13 +136,6 @@ class TestCffCompressor(unittest.TestCase):
         self.assertEqual(tokenCost(107), 1)
         self.assertEqual(tokenCost(108), 2)
 
-    def test_string_cost(self):
-        """Ensure an entire string can have its cost calculated"""
-
-        string_cost = cffCompressor.CandidateSubr.string_cost
-
-        self.assertEqual(string_cost((108, 'endchar')), 3)
-
     def test_candidatesubr_len(self):
         """Make sure len returns the correct length"""
 
@@ -153,3 +147,114 @@ class TestCffCompressor(unittest.TestCase):
         expected_value = (348, 374, 'rmoveto')
 
         self.assertEqual(self.cand_subr.value(), expected_value)
+
+
+
+
+def test_compression_integrity(orignal_file, compressed_file):
+    from fontTools.ttLib import TTFont
+    from fontTools.subset import _DecompressingT2Decompiler, _DehintingT2Decompiler
+    from fontTools.pens import basePen
+
+    orig_font = TTFont(orignal_file)
+    orig_gset = orig_font.getGlyphSet()
+    comp_font = TTFont(compressed_file)
+    comp_gset = comp_font.getGlyphSet()
+
+    assert orig_gset.keys() == comp_gset.keys()
+
+    for k in comp_font["CFF "].cff.keys():
+        f = comp_font["CFF "].cff[k]
+        cs = f.CharStrings
+
+        css = set()
+        for g in f.charset:
+            c,sel = cs.getItemAndSelector(g)
+            # Make sure it's decompiled.  We want our "decompiler" to walk
+            # the program, not the bytecode.
+            c.draw(basePen.NullPen())
+            subrs = getattr(c.private, "Subrs", [])
+            decompiler = _DehintingT2Decompiler(css, subrs, c.globalSubrs)
+            decompiler.execute(c)
+        for charstring in css:
+            charstring.drop_hints()
+        del css
+
+        for g in f.charset:
+            c,sel = cs.getItemAndSelector(g)
+            subrs = getattr(c.private, "Subrs", [])
+            decompiler = _DecompressingT2Decompiler(subrs, c.globalSubrs)
+            decompiler.execute(c)
+            c.program = c._decompressed
+
+    passed = True
+    for g in orig_gset.keys():
+        orig_gset[g].decompile()
+        if not (orig_gset[g].program == comp_gset[g].program):
+            print "Difference found in glyph '%s'" % (g,)
+            passed = False
+
+    if passed:
+        print "Fonts match!"
+    else:
+        print "Fonts have differences :("
+
+def test_call_depth(compressed_file):
+    from fontTools.ttLib import TTFont
+    from fontTools.misc import psCharStrings
+
+    f = TTFont(compressed_file)
+
+    for g in f.getGlyphSet().values():
+        g.decompile()
+
+    class track_info: pass
+
+    track_info.passed = True
+    track_info.max_for_all = 0
+
+    gsubrs = f["CFF "].cff.GlobalSubrs
+    gbias = psCharStrings.calcSubrBias(gsubrs)
+
+    def increment_subr_depth(subr, depth, subrs=None, bias=None):
+        subr._max_call_depth = depth
+        if subr._max_call_depth > 10:
+            track_info.passed = False
+        if subr._max_call_depth > track_info.max_for_all:
+            track_info.max_for_all = subr._max_call_depth
+        program = subr.program
+
+        last = program[0]
+        for tok in program[1:]:
+            if tok == "callsubr":
+                assert type(last) == int
+                next_subr = subrs[last + bias]
+                if (not hasattr(next_subr, "_max_call_depth") or 
+                        next_subr._max_call_depth < depth + 1):
+                    increment_subr_depth(next_subr, depth + 1, subrs, bias)
+            elif tok == "callgsubr":
+                assert type(last) == int
+                next_subr = gsubrs[last + gbias]
+                if (not hasattr(next_subr, "_max_call_depth") or 
+                        next_subr._max_call_depth < depth + 1):
+                    increment_subr_depth(next_subr, depth + 1)
+
+    def check_subrs(subrs):
+        bias = psCharStrings.calcSubrBias(subrs)
+
+        for idx, subr in enumerate(subrs):
+            # if idx == 58:
+            #     import pdb; pdb.set_trace()
+            if not hasattr(subr, "_max_call_depth"):
+                increment_subr_depth(subr, 1, subrs, bias)
+
+    check_subrs(gsubrs)
+
+    for td in f["CFF "].cff.topDictIndex:
+        if hasattr(td, "Private"):
+            check_subrs(td.Private.Subrs)
+
+    if track_info.passed:
+        print "Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all
+    else:
+        print "Subroutine nesting depth too deep :( [max nesting depth of %d]" % track_info.max_for_all
