@@ -463,8 +463,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     ALPHA = 0.1
     K = 0.1
     PROCESSES = 12
-    NROUNDS = 3
-    POOL_CHUNKSIZE = 80
+    NROUNDS = 2
+    POOL_CHUNKRATIO = 0.2
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -490,6 +490,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     import time; start_time = time.time()
 
+    print "dots=%d" % (len(data) + len(substrings))
+
     # set up dictionary with initial values
     for idx, substr in enumerate(substrings):
         substr._adjusted_cost = substr.cost()
@@ -497,13 +499,16 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         substr._usages = substr.freq # this is the frequency that the substring appears, 
                                     # not necessarily used
         substr._list_idx = idx
-        substr_dict[substr.value()] = substr
+        substr_dict[substr.value()] = (idx, substr._price) # XXX avoid excess data copying on fork
+                                                           # probably can just pass substr
+                                                           # if threading instead
 
     for run_count in range(NROUNDS):
         # calibrate prices
-        for substr in substrings:
+        for idx, substr in enumerate(substrings):
             marg_cost = float(substr._adjusted_cost) / (substr._usages + K)
             substr._price = marg_cost * ALPHA + substr._price * (1 - ALPHA)
+            substr_dict[substr.value()] = (idx, substr._price)
 
         # minimize charstring costs in current market through DP
         encodings = pool.map(functools.partial(optimize_charstring,
@@ -511,8 +516,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                substr_dict=substr_dict,
                                                verbose=verbose),
                              data,
-                             chunksize=POOL_CHUNKSIZE)
-        encodings = [[(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in i["encoding"]] for i in encodings]
+                             chunksize=int(POOL_CHUNKRATIO*len(data)))
+        encodings = [[(enc_item[0], substrings[enc_item[1]]) for enc_item in i["encoding"]] for i in encodings]
 
         # minimize substring costs
         substr_encodings = pool.map(functools.partial(optimize_charstring, 
@@ -520,9 +525,10 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                       substr_dict=substr_dict,
                                                       verbose=verbose),
                                     [s.value() for s in substrings],
-                                    chunksize=POOL_CHUNKSIZE)
+                                    chunksize=int(POOL_CHUNKRATIO*len(substrings)))
+
         for substr, result in zip(substrings, substr_encodings):
-            substr._encoding = [(enc_item[0], substrings[enc_item[1]._list_idx]) for enc_item in result["encoding"]]
+            substr._encoding = [(enc_item[0], substrings[enc_item[1]]) for enc_item in result["encoding"]]
             substr._adjusted_cost = result["market_cost"]
         substr_encodings = None # attempt to garbage collect this
 
@@ -552,7 +558,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
             if verbose:
                 print "%d substrings with non-positive savings removed" % len(bad_substrings)
                 print "(%d had positive usage)" % len([s for s in bad_substrings if s._usages > 0])
-        print "Took %gs to cutdown" % (time.time() - cutdown_time)
+            print "Took %gs to cutdown" % (time.time() - cutdown_time)
 
         print
 
@@ -564,8 +570,10 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     bias = psCharStrings.calcSubrBias(subrs)
 
-    for idx, subr in enumerate(subrs):
-        subr._position = idx
+    def update_position(idsubr): idsubr[1]._position = idsubr[0]
+    map(update_position, enumerate(subrs))
+
+    for subr in subrs:
         program = [rev_keymap[tok] for tok in subr.value()]
         if program[-1] not in ("endchar", "return"):
             program.append("return")
@@ -599,7 +607,8 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
             cur_cost += cost_map[charstring[j - 1]]
             if charstring[i:j] in substr_dict:
                 substr = substr_dict[charstring[i:j]]
-                option = substr._price + results[j]
+                option = substr[1] + results[j]
+                substr = substr[0]
             else:
                 # note: must not be branching, so just make _price actual cost
                 substr = None
