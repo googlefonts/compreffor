@@ -124,6 +124,21 @@ class TestCffCompressor(unittest.TestCase):
 
         self.assertEqual(program, [7, 5, "callgsubr", 8, 21, "callgsubr"])
 
+    def x_test_multiple_nested_subr_calls(self):
+        """Test to make sure we can handle nested subrs"""
+
+        glyph_set = {'a': (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 20),
+                     'b': (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 21),
+                     'c': (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 22),
+                     'd': (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 23),
+                     'e': (0, 1, 2, 3, 4, 5, 6, 7, 14, 15, 16, 17, 18, 19, 24),
+                     'f': (0, 1, 2, 3, 4, 5, 6, 7, 14, 15, 16, 17, 18, 19, 25),
+                     'g': (0, 1, 2, 3, 4, 5, 6, 7, 14, 15, 16, 17, 18, 19, 26),}
+        glyph_set = DummyGlyphSet(glyph_set)
+        # import pdb; pdb.set_trace()
+        ans = cffCompressor.iterative_encode(glyph_set, test_mode=True)
+        print(ans["glyph_encodings"])
+
     # ---
 
     def test_tokenCost(self):
@@ -201,19 +216,24 @@ def test_compression_integrity(orignal_file, compressed_file):
 
 def test_call_depth(compressed_file):
     from fontTools.ttLib import TTFont
-    from fontTools.misc import psCharStrings
 
     f = TTFont(compressed_file)
 
-    for g in f.getGlyphSet().values():
-        g.decompile()
+    check_cff_call_depth(f["CFF "].cff)
+
+def check_cff_call_depth(cff):
+    from fontTools.misc import psCharStrings
+
+    for td in cff.topDictIndex:
+        for g in td.charset:
+            td.CharStrings[g].decompile()
 
     class track_info: pass
 
     track_info.passed = True
     track_info.max_for_all = 0
 
-    gsubrs = f["CFF "].cff.GlobalSubrs
+    gsubrs = cff.GlobalSubrs
     gbias = psCharStrings.calcSubrBias(gsubrs)
 
     def increment_subr_depth(subr, depth, subrs=None, bias=None):
@@ -224,35 +244,40 @@ def test_call_depth(compressed_file):
             track_info.max_for_all = subr._max_call_depth
         program = subr.program
 
-        last = program[0]
-        for tok in program[1:]:
-            if tok == "callsubr":
-                assert type(last) == int
-                next_subr = subrs[last + bias]
-                if (not hasattr(next_subr, "_max_call_depth") or 
-                        next_subr._max_call_depth < depth + 1):
-                    increment_subr_depth(next_subr, depth + 1, subrs, bias)
-            elif tok == "callgsubr":
-                assert type(last) == int
-                next_subr = gsubrs[last + gbias]
-                if (not hasattr(next_subr, "_max_call_depth") or 
-                        next_subr._max_call_depth < depth + 1):
-                    increment_subr_depth(next_subr, depth + 1)
+        if len(program) > 0:
+            last = program[0]
+            for tok in program[1:]:
+                if tok == "callsubr":
+                    assert type(last) == int
+                    next_subr = subrs[last + bias]
+                    if (not hasattr(next_subr, "_max_call_depth") or 
+                            next_subr._max_call_depth < depth + 1):
+                        increment_subr_depth(next_subr, depth + 1, subrs, bias)
+                elif tok == "callgsubr":
+                    assert type(last) == int
+                    next_subr = gsubrs[last + gbias]
+                    if (not hasattr(next_subr, "_max_call_depth") or 
+                            next_subr._max_call_depth < depth + 1):
+                        increment_subr_depth(next_subr, depth + 1)
+                last = tok
+        else:
+            print "Compiled subr encountered"
 
     def check_subrs(subrs):
         bias = psCharStrings.calcSubrBias(subrs)
 
         for idx, subr in enumerate(subrs):
-            # if idx == 58:
-            #     import pdb; pdb.set_trace()
             if not hasattr(subr, "_max_call_depth"):
                 increment_subr_depth(subr, 1, subrs, bias)
 
     check_subrs(gsubrs)
 
-    for td in f["CFF "].cff.topDictIndex:
-        if hasattr(td, "Private"):
-            check_subrs(td.Private.Subrs)
+    for td in cff.topDictIndex:
+        try:
+            for fd in td.FDArray:
+                check_subrs(fd.Private.Subrs)
+        except AttributeError:
+            pass
 
     if track_info.passed:
         print "Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all

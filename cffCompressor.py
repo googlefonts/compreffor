@@ -48,7 +48,7 @@ class CandidateSubr(object):
 
     __slots__ = ["length", "location", "freq", "chstrings", "cost_map", "_CandidateSubr__cost",
                  "_adjusted_cost", "_price", "_usages", "_list_idx", "_position", "_encoding",
-                 "_program"]
+                 "_program", "_reachable"]
 
     # length -- length of substring
     # location -- tuple of form (glyph_idx, start_pos) where a ref string starts
@@ -62,6 +62,8 @@ class CandidateSubr(object):
         self.freq = freq
         self.chstrings = chstrings
         self.cost_map = cost_map
+
+        self._reachable = False
 
     def __len__(self):
         """Return the number of tokens in this substring"""
@@ -109,7 +111,7 @@ class CandidateSubr(object):
         return (  self.cost() * amt # avoided copies
                 - self.cost() # cost of subroutine body
                 - call_cost * amt # cost of calling
-                - subr_overhead) # cost of subr definition\
+                - subr_overhead) # cost of subr definition
 
     @staticmethod
     def tokenCost(token):
@@ -167,9 +169,13 @@ class CandidateSubr(object):
             return NotImplemented
         return self.sort_on() > other.sort_on()
 
+    # XXX is this a good thing?
+    def __hash__(self):
+        return hash((self.location, self.length))
+
 
     def __repr__(self):
-        return "<CandidateSubr: %d x %d>" % (self.length, self.freq)
+        return "<CandidateSubr: %d x %dreps>" % (self.length, self.freq)
 
 class SubstringFinder(object):
     """
@@ -463,7 +469,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     ALPHA = 0.1
     K = 0.1
     PROCESSES = 12
-    NROUNDS = 2
+    NROUNDS = 5
     POOL_CHUNKRATIO = 0.2
 
     # generate substrings for marketplace
@@ -479,7 +485,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     else:
         class DummyPool: pass
         pool = DummyPool()
-        pool.map = lambda f, l, chunksize: map(f, l)
+        pool.map = lambda f, *l, **kwargs: map(f, *l)
 
     data = sf.data
     rev_keymap = sf.rev_keymap
@@ -516,7 +522,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                substr_dict=substr_dict,
                                                verbose=verbose),
                              data,
-                             chunksize=int(POOL_CHUNKRATIO*len(data)))
+                             chunksize=int(POOL_CHUNKRATIO*len(data)) + 1)
         encodings = [[(enc_item[0], substrings[enc_item[1]]) for enc_item in i["encoding"]] for i in encodings]
 
         # minimize substring costs
@@ -524,7 +530,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                       cost_map=cost_map,
                                                       substr_dict=substr_dict,
                                                       verbose=verbose),
-                                    [s.value() for s in substrings],
+                                    enumerate([s.value() for s in substrings]),
                                     chunksize=int(POOL_CHUNKRATIO*len(substrings)))
 
         for substr, result in zip(substrings, substr_encodings):
@@ -548,7 +554,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         print "Round %d Done!" % (run_count + 1)
 
         cutdown_time = time.time()
-        if run_count == NROUNDS - 2:
+        if run_count == NROUNDS - 2 and not test_mode:
             bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True) <= 0]
             substrings = [s for s in substrings if s.subr_saving(use_usages=True) > 0]
             for substr in bad_substrings:
@@ -564,8 +570,17 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
 
+    def mark_reachable(cand_subr):
+        cand_subr._reachable = True
+        for it in cand_subr._encoding:
+            mark_reachable(it[1])
+    for encoding in encodings:
+        for it in encoding:
+            mark_reachable(it[1])
+
     subrs = set()
-    subrs.update([it[1] for enc in encodings for it in enc])
+    # subrs.update([it[1] for enc in encodings for it in enc])
+    subrs.update([subr for subr in substrings if subr._usages > 0 and subr._reachable])
     subrs = sorted(list(subrs), key=lambda s: s._usages, reverse=True)
 
     bias = psCharStrings.calcSubrBias(subrs)
@@ -584,7 +599,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     # pr.create_stats()
     # pr.dump_stats("totalstats")
 
-    return {"glyph_encodings": dict((glyph_set_keys[i], encodings[i]) for i in xrange(len(encodings))),
+    return {"glyph_encodings": dict(zip(glyph_set_keys, encodings)),
             "subroutines": subrs}
 
 def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
@@ -594,6 +609,12 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
     # import cProfile
     # pr = cProfile.Profile()
     # pr.enable()
+
+    if len(charstring) > 1 and type(charstring[1]) == tuple:
+        skip_idx = charstring[0]
+        charstring = charstring[1]
+    else:
+        skip_idx = None
 
     results = [0 for _ in xrange(len(charstring) + 1)]
     next_enc_idx = [None for _ in xrange(len(charstring))]
@@ -605,10 +626,15 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
         cur_cost = 0
         for j in range(i + 1, len(charstring) + 1):
             cur_cost += cost_map[charstring[j - 1]]
+
             if charstring[i:j] in substr_dict:
                 substr = substr_dict[charstring[i:j]]
-                option = substr[1] + results[j]
-                substr = substr[0]
+                if substr[0] != skip_idx:
+                    option = substr[1] + results[j]
+                    substr = substr[0]
+                else:
+                    substr = None
+                    option = cur_cost + results[j]
             else:
                 # note: must not be branching, so just make _price actual cost
                 substr = None
