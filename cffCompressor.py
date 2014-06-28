@@ -39,6 +39,7 @@ SINGLE_BYTE_OPS = set(['hstem',
                        'vhcurveto',
                        'hvcurveto'])
 
+POOL_CHUNKRATIO = None
 
 class CandidateSubr(object):
     """
@@ -469,8 +470,10 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     ALPHA = 0.1
     K = 0.1
     PROCESSES = 12
-    NROUNDS = 5
-    POOL_CHUNKRATIO = 0.2
+    NROUNDS = 1
+    global POOL_CHUNKRATIO
+    if POOL_CHUNKRATIO == None:
+        POOL_CHUNKRATIO = 0.05
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -531,7 +534,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                       substr_dict=substr_dict,
                                                       verbose=verbose),
                                     enumerate([s.value() for s in substrings]),
-                                    chunksize=int(POOL_CHUNKRATIO*len(substrings)))
+                                    chunksize=int(POOL_CHUNKRATIO*len(substrings)) + 1)
 
         for substr, result in zip(substrings, substr_encodings):
             substr._encoding = [(enc_item[0], substrings[enc_item[1]]) for enc_item in result["encoding"]]
@@ -782,7 +785,10 @@ if __name__ == '__main__':
                         dest='verbose_test', default=False)
     parser.add_argument('-c', required=False, action='store_true',
                         dest='check', default=False)
+    parser.add_argument('--chunkratio', required=False, type=float)
 
     kwargs = vars(parser.parse_args())
+
+    POOL_CHUNKRATIO = kwargs.pop("chunkratio", None)
 
     main(**kwargs)
