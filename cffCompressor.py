@@ -473,7 +473,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     NROUNDS = 1
     global POOL_CHUNKRATIO
     if POOL_CHUNKRATIO == None:
-        POOL_CHUNKRATIO = 0.05
+        POOL_CHUNKRATIO = 0.05 # for latin
+        # POOL_CHUNKRATIO = 0.11 # for logotype
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
