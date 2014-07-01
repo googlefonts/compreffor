@@ -91,7 +91,7 @@ class CandidateSubr(object):
         except:
             raise Exception('Translated token not recognized') 
 
-    def subr_saving(self, use_usages=False, true_cost=False, call_cost=5, subr_overhead=3):
+    def subr_saving(self, use_usages=False, true_cost=False, call_cost=2, subr_overhead=3):
         """
         Return the savings that will be realized by subroutinizing
         this substring.
@@ -116,6 +116,8 @@ class CandidateSubr(object):
         # - If substring ends in "endchar", we need no "return"
         #   added and as such subr_overhead will be one byte
         #   smaller.
+        # - The call_cost should be greater if the position of the subr
+        #   is greater
         return (  cost * amt # avoided copies
                 - cost # cost of subroutine body
                 - call_cost * amt # cost of calling
@@ -453,8 +455,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     NROUNDS = 4
     global POOL_CHUNKRATIO
     if POOL_CHUNKRATIO == None:
-        POOL_CHUNKRATIO = 0.05 # for latin
-        # POOL_CHUNKRATIO = 0.11 # for logotype
+        # POOL_CHUNKRATIO = 0.05 # for latin
+        POOL_CHUNKRATIO = 0.11 # for logotype
     NSUBRS_LIMIT = 32765 # 32K - 3
     # NSUBRS_LIMIT = 65533 # 64K - 3
 
@@ -541,12 +543,17 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
         if run_count <= NROUNDS - 2 and not test_mode:
             cutdown_time = time.time()
-            bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=(run_count==NROUNDS-2)) <= 0]
-            substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=(run_count==NROUNDS-2)) > 0]
+            if run_count < NROUNDS - 2:
+                bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True) <= 0]
+                substrings = [s for s in substrings if s.subr_saving(use_usages=True) > 0]
+            else:
+                bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=True) <= 0]
+                substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=True) > 0]
+
             for substr in bad_substrings:
-                # potential heuristic:
-                # for idx, called_substr in substr._encoding:
-                #     called_substr._usages += substr._usages - 1
+                # heuristic to encourage use of called substrings:
+                for idx, called_substr in substr._encoding:
+                    called_substr._usages += substr._usages - 1
                 del substr_dict[substr.value()]
             for idx, s in enumerate(substrings):
                 s._list_idx = idx
@@ -570,17 +577,17 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     # subrs = set()
     # subrs.update([it[1] for enc in encodings for it in enc])
     subrs = [s for s in substrings if s._usages > 0 and s._reachable and s.subr_saving(use_usages=True, true_cost=True) > 0]
-    subrs.sort(key=lambda s: s._usages, reverse=True)
 
     bad_substrings = [s for s in substrings if s._usages == 0 or not s._reachable or s.subr_saving(use_usages=True, true_cost=True) <= 0]
 
     if len(subrs) > NSUBRS_LIMIT:
         # remove least effective subrs
-        rem = len(subrs) - NSUBRS_LIMIT
+        subrs.sort(key=lambda s: s.subr_saving(use_usages=True, true_cost=True), reverse=True)
         bad_substrings.extend(subrs[NSUBRS_LIMIT:])
         del subrs[NSUBRS_LIMIT:]
 
-   # reorganize to minimize call cost of most frequent subrs
+    # reorganize to minimize call cost of most frequent subrs
+    subrs.sort(key=lambda s: s._usages, reverse=True)
     bias = psCharStrings.calcSubrBias(subrs)
     if bias == 1131:
         subrs = subrs[216:1240] + subrs[0:216] + subrs[1240:]
@@ -589,7 +596,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                     subrs[0:216] + subrs[1240:2264] + subrs[33901:])
 
     bad_substrings.sort(key=lambda s: len(s))
-    print "%d useless substrings survived the reaping" % len(bad_substrings)
+    print "%d substrings being flattened" % len(bad_substrings)
 
     def update_position(idsubr): idsubr[1]._position = idsubr[0]
     map(update_position, enumerate(subrs))
