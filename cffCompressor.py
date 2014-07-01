@@ -49,7 +49,7 @@ class CandidateSubr(object):
 
     __slots__ = ["length", "location", "freq", "chstrings", "cost_map", "_CandidateSubr__cost",
                  "_adjusted_cost", "_price", "_usages", "_list_idx", "_position", "_encoding",
-                 "_program", "_reachable"]
+                 "_program", "_reachable", "_flatten"]
 
     # length -- length of substring
     # location -- tuple of form (glyph_idx, start_pos) where a ref string starts
@@ -65,6 +65,7 @@ class CandidateSubr(object):
         self.cost_map = cost_map
 
         self._reachable = False
+        self._flatten = False
 
     def __len__(self):
         """Return the number of tokens in this substring"""
@@ -452,8 +453,10 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     NROUNDS = 4
     global POOL_CHUNKRATIO
     if POOL_CHUNKRATIO == None:
-        # POOL_CHUNKRATIO = 0.05 # for latin
-        POOL_CHUNKRATIO = 0.11 # for logotype
+        POOL_CHUNKRATIO = 0.05 # for latin
+        # POOL_CHUNKRATIO = 0.11 # for logotype
+    NSUBRS_LIMIT = 32765 # 32K - 3
+    # NSUBRS_LIMIT = 65533 # 64K - 3
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -499,15 +502,6 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
             substr._price = marg_cost * ALPHA + substr._price * (1 - ALPHA)
             substr_dict[substr.value()] = (idx, substr._price)
 
-        # minimize charstring costs in current market through DP
-        encodings = pool.map(functools.partial(optimize_charstring,
-                                               cost_map=cost_map,
-                                               substr_dict=substr_dict,
-                                               verbose=verbose),
-                             zip(glyph_set_keys, data),
-                             chunksize=int(POOL_CHUNKRATIO*len(data)) + 1)
-        encodings = [[(enc_item[0], substrings[enc_item[1]]) for enc_item in i["encoding"]] for i in encodings]
-
         # minimize substring costs
         substr_encodings = pool.map(functools.partial(optimize_charstring, 
                                                       cost_map=cost_map,
@@ -520,6 +514,15 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
             substr._encoding = [(enc_item[0], substrings[enc_item[1]]) for enc_item in result["encoding"]]
             substr._adjusted_cost = result["market_cost"]
         substr_encodings = None # attempt to garbage collect this
+
+        # minimize charstring costs in current market through DP
+        encodings = pool.map(functools.partial(optimize_charstring,
+                                               cost_map=cost_map,
+                                               substr_dict=substr_dict,
+                                               verbose=verbose),
+                             zip(glyph_set_keys, data),
+                             chunksize=int(POOL_CHUNKRATIO*len(data)) + 1)
+        encodings = [[(enc_item[0], substrings[enc_item[1]]) for enc_item in i["encoding"]] for i in encodings]
 
         # update substring frequencies based on cost minimization
         for substr in substrings:
@@ -554,10 +557,6 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
         print
 
-    bad_substrings = len([s for s in substrings if s.subr_saving(use_usages=True, true_cost=True) <= 0])
-    print "%d useless substrings survived the reaping" % bad_substrings
-
-
     print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
 
     def mark_reachable(cand_subr):
@@ -568,15 +567,40 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         for it in encoding:
             mark_reachable(it[1])
 
-    subrs = set()
+    # subrs = set()
     # subrs.update([it[1] for enc in encodings for it in enc])
-    subrs.update([subr for subr in substrings if subr._usages > 0 and subr._reachable])
-    subrs = sorted(list(subrs), key=lambda s: s._usages, reverse=True)
+    subrs = [s for s in substrings if s._usages > 0 and s._reachable and s.subr_saving(use_usages=True, true_cost=True) > 0]
+    subrs.sort(key=lambda s: s._usages, reverse=True)
 
+    bad_substrings = [s for s in substrings if s._usages == 0 or not s._reachable or s.subr_saving(use_usages=True, true_cost=True) <= 0]
+
+    if len(subrs) > NSUBRS_LIMIT:
+        # remove least effective subrs
+        rem = len(subrs) - NSUBRS_LIMIT
+        bad_substrings.extend(subrs[NSUBRS_LIMIT:])
+        del subrs[NSUBRS_LIMIT:]
+
+   # reorganize to minimize call cost of most frequent subrs
     bias = psCharStrings.calcSubrBias(subrs)
+    if bias == 1131:
+        subrs = subrs[216:1240] + subrs[0:216] + subrs[1240:]
+    elif bias == 32768:
+        subrs = (subrs[2264:33901] + subrs[216:1240] +
+                    subrs[0:216] + subrs[1240:2264] + subrs[33901:])
+
+    bad_substrings.sort(key=lambda s: len(s))
+    print "%d useless substrings survived the reaping" % len(bad_substrings)
 
     def update_position(idsubr): idsubr[1]._position = idsubr[0]
     map(update_position, enumerate(subrs))
+
+    for subr in bad_substrings:
+        # NOTE: it is important this is run in order so shorter
+        # substrings are run before longer ones
+        program = [rev_keymap[tok] for tok in subr.value()]
+        update_program(program, subr._encoding, bias)
+        subr._program = program
+        subr._flatten = True
 
     for subr in subrs:
         program = [rev_keymap[tok] for tok in subr.value()]
@@ -616,7 +640,7 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
     next_enc_idx = [None for _ in xrange(len(charstring))]
     next_enc_substr = [None for _ in xrange(len(charstring))]
     for i in reversed(range(len(charstring))):
-        min_option = float('inf')
+        min_option = float("inf")
         min_enc_idx = len(charstring)
         min_enc_substr = None
         cur_cost = 0
@@ -676,8 +700,8 @@ def has_endchar(subr):
 def apply_encoding(font, glyph_encodings, subrs):
     """Apply the result of iterative_encode to a TTFont"""
 
-    assert len(font['CFF '].cff.topDictIndex) == 1
-    top_dict = font['CFF '].cff.topDictIndex[0]
+    assert len(font["CFF "].cff.topDictIndex) == 1
+    top_dict = font["CFF "].cff.topDictIndex[0]
 
     bias = psCharStrings.calcSubrBias(subrs)
 
@@ -692,9 +716,13 @@ def apply_encoding(font, glyph_encodings, subrs):
 def update_program(program, encoding, bias):
     offset = 0
     for item in encoding:
-        assert hasattr(item[1], "_position"), "CandidateSubr without position in Subrs encountered"
-        program[(item[0] - offset):(item[0] + item[1].length - offset)] = [item[1]._position - bias, "callgsubr"]
-        offset += item[1].length - 2
+        if item[1]._flatten:
+            program[(item[0] - offset):(item[0] + item[1].length - offset)] = item[1]._program
+            offset += item[1].length - len(item[1]._program)
+        else:
+            assert hasattr(item[1], "_position"), "CandidateSubr without position in Subrs encountered"
+            program[(item[0] - offset):(item[0] + item[1].length - offset)] = [item[1]._position - bias, "callgsubr"]
+            offset += item[1].length - 2
     return program
 
 def compress_cff(font, out_file="compressed.otf"):
@@ -708,6 +736,9 @@ def compress_cff(font, out_file="compressed.otf"):
     subrs = ans["subroutines"]
     apply_encoding(font, encoding, subrs)
     font.save(out_file)
+
+    # save CFF version
+    font["CFF "].cff.compile(open("%s.cff" % os.path.splitext(out_file)[0], "w"), None)
 
     # print hp.heap()
 
