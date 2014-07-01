@@ -90,7 +90,7 @@ class CandidateSubr(object):
         except:
             raise Exception('Translated token not recognized') 
 
-    def subr_saving(self, use_usages=False, call_cost=5, subr_overhead=3):
+    def subr_saving(self, use_usages=False, true_cost=False, call_cost=5, subr_overhead=3):
         """
         Return the savings that will be realized by subroutinizing
         this substring.
@@ -105,12 +105,18 @@ class CandidateSubr(object):
         else:
             amt = self.freq
 
+        cost = self.cost()
+
+        if true_cost and hasattr(self, "_encoding"):
+            # account for subroutine calls
+            cost -= sum([it[1].cost() - call_cost for it in self._encoding])
+
         #TODO:
         # - If substring ends in "endchar", we need no "return"
         #   added and as such subr_overhead will be one byte
         #   smaller.
-        return (  self.cost() * amt # avoided copies
-                - self.cost() # cost of subroutine body
+        return (  cost * amt # avoided copies
+                - cost # cost of subroutine body
                 - call_cost * amt # cost of calling
                 - subr_overhead) # cost of subr definition
 
@@ -138,42 +144,15 @@ class CandidateSubr(object):
         assert 0
 
 
-    sort_on = lambda self: -self.subr_saving()
-
-    def __lt__(self, other):
-        if type(other) != CandidateSubr:
-            return NotImplemented
-        return self.sort_on() < other.sort_on()
-
-    def __le__(self, other):
-        if type(other) != CandidateSubr:
-            return NotImplemented
-        return self.sort_on() <= other.sort_on()
-
     def __eq__(self, other):
         if type(other) != CandidateSubr:
             return NotImplemented
-        return self.sort_on() == other.sort_on()
+        return self.length == other.length and self.location == other.location
 
     def __ne__(self, other):
         if type(other) != CandidateSubr:
             return NotImplemented
-        return self.sort_on() != other.sort_on()
-
-    def __ge__(self, other):
-        if type(other) != CandidateSubr:
-            return NotImplemented
-        return self.sort_on() >= other.sort_on()
-
-    def __gt__(self, other):
-        if type(other) != CandidateSubr:
-            return NotImplemented
-        return self.sort_on() > other.sort_on()
-
-    # XXX is this a good thing?
-    def __hash__(self):
-        return hash((self.location, self.length))
-
+        return self.length != other.length or self.location != other.location
 
     def __repr__(self):
         return "<CandidateSubr: %d x %dreps>" % (self.length, self.freq)
@@ -470,11 +449,11 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     ALPHA = 0.1
     K = 0.1
     PROCESSES = 12
-    NROUNDS = 1
+    NROUNDS = 4
     global POOL_CHUNKRATIO
     if POOL_CHUNKRATIO == None:
-        POOL_CHUNKRATIO = 0.05 # for latin
-        # POOL_CHUNKRATIO = 0.11 # for logotype
+        # POOL_CHUNKRATIO = 0.05 # for latin
+        POOL_CHUNKRATIO = 0.11 # for logotype
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -525,7 +504,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
                                                cost_map=cost_map,
                                                substr_dict=substr_dict,
                                                verbose=verbose),
-                             data,
+                             zip(glyph_set_keys, data),
                              chunksize=int(POOL_CHUNKRATIO*len(data)) + 1)
         encodings = [[(enc_item[0], substrings[enc_item[1]]) for enc_item in i["encoding"]] for i in encodings]
 
@@ -557,11 +536,14 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
         print "Round %d Done!" % (run_count + 1)
 
-        cutdown_time = time.time()
-        if run_count == NROUNDS - 2 and not test_mode:
-            bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True) <= 0]
-            substrings = [s for s in substrings if s.subr_saving(use_usages=True) > 0]
+        if run_count <= NROUNDS - 2 and not test_mode:
+            cutdown_time = time.time()
+            bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=(run_count==NROUNDS-2)) <= 0]
+            substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=(run_count==NROUNDS-2)) > 0]
             for substr in bad_substrings:
+                # potential heuristic:
+                # for idx, called_substr in substr._encoding:
+                #     called_substr._usages += substr._usages - 1
                 del substr_dict[substr.value()]
             for idx, s in enumerate(substrings):
                 s._list_idx = idx
@@ -571,6 +553,10 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
             print "Took %gs to cutdown" % (time.time() - cutdown_time)
 
         print
+
+    bad_substrings = len([s for s in substrings if s.subr_saving(use_usages=True, true_cost=True) <= 0])
+    print "%d useless substrings survived the reaping" % bad_substrings
+
 
     print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
 
@@ -615,8 +601,14 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
     # pr.enable()
 
     if len(charstring) > 1 and type(charstring[1]) == tuple:
-        skip_idx = charstring[0]
-        charstring = charstring[1]
+        if type(charstring[0]) == int:
+            skip_idx = charstring[0]
+            charstring = charstring[1]
+            glyph_key = None
+        else:
+            glyph_key = charstring[0] # XXX remove this testing thing!
+            charstring = charstring[1]
+            skip_idx = None
     else:
         skip_idx = None
 
@@ -655,19 +647,18 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
 
     market_cost = results[0]
     encoding = []
-    last_idx = 0 
-    cur_enc_idx = next_enc_idx[0]
-    cur_enc_substr = next_enc_substr[0]
+    cur_enc_idx = 0
     last = len(next_enc_idx)
     while cur_enc_idx < last:
+        last_idx = cur_enc_idx
+        cur_enc_substr = next_enc_substr[cur_enc_idx]
+        cur_enc_idx = next_enc_idx[cur_enc_idx]
+
         if cur_enc_substr != None:
             encoding.append((last_idx, cur_enc_substr))
         elif cur_enc_idx - last_idx > 1:
             print "Weird charstring: %s" % (charstring,)
             print "Weird index: %d" % (cur_enc_idx,)
-        last_idx = cur_enc_idx
-        cur_enc_substr = next_enc_substr[cur_enc_idx]
-        cur_enc_idx = next_enc_idx[cur_enc_idx]
 
     # pr.disable()
     # pr.create_stats()
@@ -676,6 +667,11 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
     if verbose:
         sys.stdout.write("."); sys.stdout.flush()
     return {"encoding": encoding, "market_cost": market_cost}
+
+def has_endchar(subr):
+    return (subr._program[-1] == "endchar"
+            or ((subr._program[-1] == "callsubr" or subr._program[-1] == "callgsubr")
+                and has_endchar(subr._encoding[-1][1])))
     
 def apply_encoding(font, glyph_encodings, subrs):
     """Apply the result of iterative_encode to a TTFont"""
@@ -692,10 +688,6 @@ def apply_encoding(font, glyph_encodings, subrs):
     for glyph, enc in glyph_encodings.iteritems():
         charstring = top_dict.CharStrings[glyph]
         update_program(charstring.program, enc, bias)
-        if not (charstring.program[-1] == "endchar" \
-            or ((charstring.program[-1] == "callsubr" or charstring.program[-1] == "callgsubr") 
-                and enc[-1][1]._program[-1] == "endchar")):
-            charstring.program.append("endchar")
 
 def update_program(program, encoding, bias):
     offset = 0
