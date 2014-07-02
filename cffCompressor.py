@@ -49,7 +49,7 @@ class CandidateSubr(object):
 
     __slots__ = ["length", "location", "freq", "chstrings", "cost_map", "_CandidateSubr__cost",
                  "_adjusted_cost", "_price", "_usages", "_list_idx", "_position", "_encoding",
-                 "_program", "_reachable", "_flatten"]
+                 "_program", "_reachable", "_flatten", "_max_call_depth"]
 
     # length -- length of substring
     # location -- tuple of form (glyph_idx, start_pos) where a ref string starts
@@ -91,7 +91,7 @@ class CandidateSubr(object):
         except:
             raise Exception('Translated token not recognized') 
 
-    def subr_saving(self, use_usages=False, true_cost=False, call_cost=2, subr_overhead=3):
+    def subr_saving(self, use_usages=False, true_cost=False, call_cost=5, subr_overhead=3):
         """
         Return the savings that will be realized by subroutinizing
         this substring.
@@ -100,6 +100,9 @@ class CandidateSubr(object):
         call_cost -- the cost to call a subroutine
         subr_overhead -- the cost to define a subroutine
         """
+
+        # NOTE: call_cost=5 gives better results for some reason
+        #       but that is really not correct
 
         if use_usages:
             amt = self._usages
@@ -116,7 +119,7 @@ class CandidateSubr(object):
         # - If substring ends in "endchar", we need no "return"
         #   added and as such subr_overhead will be one byte
         #   smaller.
-        # - The call_cost should be greater if the position of the subr
+        # - The call_cost should be 3 or 4 if the position of the subr
         #   is greater
         return (  cost * amt # avoided copies
                 - cost # cost of subroutine body
@@ -141,7 +144,7 @@ class CandidateSubr(object):
             elif 108 <= token <= 1131 or -1131 <= token <= -108:
                 return 2
             else:
-                return 5
+                return 3
         elif tp == float:
             return 5
         assert 0
@@ -459,6 +462,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         POOL_CHUNKRATIO = 0.11 # for logotype
     NSUBRS_LIMIT = 32765 # 32K - 3
     # NSUBRS_LIMIT = 65533 # 64K - 3
+    SUBR_NEST_LIMIT = 10
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
@@ -579,12 +583,28 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     subrs = [s for s in substrings if s._usages > 0 and s._reachable and s.subr_saving(use_usages=True, true_cost=True) > 0]
 
     bad_substrings = [s for s in substrings if s._usages == 0 or not s._reachable or s.subr_saving(use_usages=True, true_cost=True) <= 0]
+    print "%d substrings unused or negative savers" % len(bad_substrings)
 
     if len(subrs) > NSUBRS_LIMIT:
         # remove least effective subrs
+        print "%d subrs over the limit of subrs allowed" % len(subrs) - NSUBRS_LIMIT
         subrs.sort(key=lambda s: s.subr_saving(use_usages=True, true_cost=True), reverse=True)
         bad_substrings.extend(subrs[NSUBRS_LIMIT:])
         del subrs[NSUBRS_LIMIT:]
+
+    def set_flatten(s): s._flatten = True
+    map(set_flatten, bad_substrings)
+
+    calc_nesting(subrs)
+
+    too_nested = [s for s in subrs if s._max_call_depth > SUBR_NEST_LIMIT]
+    map(set_flatten, too_nested)
+    bad_substrings.extend(too_nested)
+    subrs = [s for s in subrs if s._max_call_depth <= SUBR_NEST_LIMIT]
+    print "%d substrings nested too deep" % len(too_nested)
+    too_nested = None
+
+    print "%d substrings being flattened" % len(bad_substrings)
 
     # reorganize to minimize call cost of most frequent subrs
     subrs.sort(key=lambda s: s._usages, reverse=True)
@@ -595,19 +615,15 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
         subrs = (subrs[2264:33901] + subrs[216:1240] +
                     subrs[0:216] + subrs[1240:2264] + subrs[33901:])
 
-    bad_substrings.sort(key=lambda s: len(s))
-    print "%d substrings being flattened" % len(bad_substrings)
+    def update_position(idx, subr): subr._position = idx
+    map(update_position, range(len(subrs)), subrs)
 
-    def update_position(idsubr): idsubr[1]._position = idsubr[0]
-    map(update_position, enumerate(subrs))
-
-    for subr in bad_substrings:
+    for subr in sorted(bad_substrings, key=lambda s: len(s)):
         # NOTE: it is important this is run in order so shorter
         # substrings are run before longer ones
         program = [rev_keymap[tok] for tok in subr.value()]
         update_program(program, subr._encoding, bias)
         subr._program = program
-        subr._flatten = True
 
     for subr in subrs:
         program = [rev_keymap[tok] for tok in subr.value()]
@@ -622,6 +638,24 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     return {"glyph_encodings": dict(zip(glyph_set_keys, encodings)),
             "subroutines": subrs}
+
+def calc_nesting(subrs):
+    def increment_subr_depth(subr, depth):
+        subr._max_call_depth = depth
+
+        callees = deque([it[1] for it in subr._encoding])
+
+        while len(callees):
+            next_subr = callees.pop()
+            if next_subr._flatten:
+                callees.extend([it[1] for it in next_subr._encoding])
+            elif (not hasattr(next_subr, "_max_call_depth") or 
+                        next_subr._max_call_depth < depth + 1):
+                    increment_subr_depth(next_subr, depth + 1)
+
+    for subr in subrs:
+        if not hasattr(subr, "_max_call_depth"):
+            increment_subr_depth(subr, 1)
 
 def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
     """Optimize a charstring (encoded using keymap) using

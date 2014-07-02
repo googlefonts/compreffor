@@ -224,13 +224,14 @@ def test_call_depth(compressed_file):
 def check_cff_call_depth(cff):
     from fontTools.misc import psCharStrings
 
+    SUBR_NESTING_LIMIT = 10
+
     for td in cff.topDictIndex:
         for g in td.charset:
             td.CharStrings[g].decompile()
 
     class track_info: pass
 
-    track_info.passed = True
     track_info.max_for_all = 0
 
     gsubrs = cff.GlobalSubrs
@@ -238,8 +239,6 @@ def check_cff_call_depth(cff):
 
     def increment_subr_depth(subr, depth, subrs=None, bias=None):
         subr._max_call_depth = depth
-        if subr._max_call_depth > 10:
-            track_info.passed = False
         if subr._max_call_depth > track_info.max_for_all:
             track_info.max_for_all = subr._max_call_depth
         program = subr.program
@@ -258,7 +257,7 @@ def check_cff_call_depth(cff):
                     next_subr = gsubrs[last + gbias]
                     if (not hasattr(next_subr, "_max_call_depth") or 
                             next_subr._max_call_depth < depth + 1):
-                        increment_subr_depth(next_subr, depth + 1)
+                        increment_subr_depth(next_subr, depth + 1, subrs, bias)
                 last = tok
         else:
             print "Compiled subr encountered"
@@ -279,7 +278,7 @@ def check_cff_call_depth(cff):
         except AttributeError:
             pass
 
-    if track_info.passed:
+    if track_info.max_for_all <= SUBR_NESTING_LIMIT:
         print "Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all
     else:
         print "Subroutine nesting depth too deep :( [max nesting depth of %d]" % track_info.max_for_all
