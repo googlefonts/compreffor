@@ -226,9 +226,9 @@ def check_cff_call_depth(cff):
 
     SUBR_NESTING_LIMIT = 10
 
-    for td in cff.topDictIndex:
-        for g in td.charset:
-            td.CharStrings[g].decompile()
+    assert len(cff.topDictIndex) == 1
+
+    td = cff.topDictIndex[0]
 
     class track_info: pass
 
@@ -237,11 +237,8 @@ def check_cff_call_depth(cff):
     gsubrs = cff.GlobalSubrs
     gbias = psCharStrings.calcSubrBias(gsubrs)
 
-    def increment_subr_depth(subr, depth, subrs=None, bias=None):
-        subr._max_call_depth = depth
-        if subr._max_call_depth > track_info.max_for_all:
-            track_info.max_for_all = subr._max_call_depth
-        program = subr.program
+    def follow_program(program, depth, subrs):
+        bias = psCharStrings.calcSubrBias(subrs)
 
         if len(program) > 0:
             last = program[0]
@@ -251,32 +248,30 @@ def check_cff_call_depth(cff):
                     next_subr = subrs[last + bias]
                     if (not hasattr(next_subr, "_max_call_depth") or 
                             next_subr._max_call_depth < depth + 1):
-                        increment_subr_depth(next_subr, depth + 1, subrs, bias)
+                        increment_subr_depth(next_subr, depth + 1, subrs)
                 elif tok == "callgsubr":
                     assert type(last) == int
                     next_subr = gsubrs[last + gbias]
                     if (not hasattr(next_subr, "_max_call_depth") or 
                             next_subr._max_call_depth < depth + 1):
-                        increment_subr_depth(next_subr, depth + 1, subrs, bias)
+                        increment_subr_depth(next_subr, depth + 1, subrs)
                 last = tok
         else:
             print "Compiled subr encountered"
 
-    def check_subrs(subrs):
-        bias = psCharStrings.calcSubrBias(subrs)
+    def increment_subr_depth(subr, depth, subrs=None):
+        if not hasattr(subr, "_max_call_depth") or subr._max_call_depth < depth:
+            subr._max_call_depth = depth
 
-        for idx, subr in enumerate(subrs):
-            if not hasattr(subr, "_max_call_depth"):
-                increment_subr_depth(subr, 1, subrs, bias)
+        if subr._max_call_depth > track_info.max_for_all:
+            track_info.max_for_all = subr._max_call_depth
 
-    check_subrs(gsubrs)
+        program = subr.program
+        follow_program(program, depth, subrs)        
 
-    for td in cff.topDictIndex:
-        try:
-            for fd in td.FDArray:
-                check_subrs(fd.Private.Subrs)
-        except AttributeError:
-            pass
+    for cs in td.CharStrings.values():
+        cs.decompile()
+        follow_program(cs.program, 0, cs.private.Subrs)
 
     if track_info.max_for_all <= SUBR_NESTING_LIMIT:
         print "Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all

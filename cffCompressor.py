@@ -4,12 +4,15 @@
 
 import os
 import argparse
+import itertools
 import unittest
 import functools
 import sys
+import heapq
 from collections import deque
 from multiprocessing import Pool
 from multiprocessing.managers import BaseManager, BaseProxy
+from fontTools import cffLib
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
 
@@ -49,7 +52,7 @@ class CandidateSubr(object):
 
     __slots__ = ["length", "location", "freq", "chstrings", "cost_map", "_CandidateSubr__cost",
                  "_adjusted_cost", "_price", "_usages", "_list_idx", "_position", "_encoding",
-                 "_program", "_reachable", "_flatten", "_max_call_depth"]
+                 "_program", "_flatten", "_max_call_depth", "_fdidx", "_global"]
 
     # length -- length of substring
     # location -- tuple of form (glyph_idx, start_pos) where a ref string starts
@@ -64,8 +67,9 @@ class CandidateSubr(object):
         self.chstrings = chstrings
         self.cost_map = cost_map
 
-        self._reachable = False
+        self._global = False
         self._flatten = False
+        self._fdidx = [] # indicates unreached subr
 
     def __len__(self):
         """Return the number of tokens in this substring"""
@@ -219,6 +223,7 @@ class SubstringFinder(object):
                        tok in ("callsubr", "callgsubr", "return", "endchar") and \
                             i == len(char_string.program) - 1
                 if tok in ("hintmask", "cntrmask"):
+                    # import pdb; pdb.set_trace()
                     # Attach next token to this, as a subroutine
                     # call cannot be placed between this token and
                     # the following.
@@ -427,7 +432,24 @@ class SubstringFinder(object):
         print("Took %gs (to sort)" % (time.time() - start_time))
         return self.substrings
 
-def iterative_encode(glyph_set, verbose=True, test_mode=False):
+def test_call_cost(subr, subrs):
+    """See how much it would cost to call subr if it were inserted into subrs"""
+
+    if len(subrs) >= 2263:
+        if subrs[2262]._usages >= subr._usages:
+            return 3
+    if len(subrs) >= 215:
+        if subrs[214]._usages >= subr._usages:
+            return 2
+    return 1
+
+def insert_by_usage(subr, subrs):
+    """Insert subr into subrs mainting a sort by usage"""
+
+    subrs.append(subr)
+    subrs.sort(key=lambda s: s._usages, reverse=True)
+
+def iterative_encode(glyph_set, fdselect=None, fdlen=1, verbose=True, test_mode=False):
     """
     Choose a subroutinization encoding for all charstrings in
     `glyph_set` using an iterative Dynamic Programming algorithm.
@@ -460,8 +482,8 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
     if POOL_CHUNKRATIO == None:
         # POOL_CHUNKRATIO = 0.05 # for latin
         POOL_CHUNKRATIO = 0.11 # for logotype
-    NSUBRS_LIMIT = 32765 # 32K - 3
-    # NSUBRS_LIMIT = 65533 # 64K - 3
+    # NSUBRS_LIMIT = 32765 # 32K - 3
+    NSUBRS_LIMIT = 65533 # 64K - 3
     SUBR_NEST_LIMIT = 10
 
     # generate substrings for marketplace
@@ -488,7 +510,7 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     import time; start_time = time.time()
 
-    print "dots=%d" % (len(data) + len(substrings))
+    print "glyphstrings+substrings=%d" % (len(data) + len(substrings))
 
     # set up dictionary with initial values
     for idx, substr in enumerate(substrings):
@@ -570,78 +592,138 @@ def iterative_encode(glyph_set, verbose=True, test_mode=False):
 
     print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
 
-    def mark_reachable(cand_subr):
-        cand_subr._reachable = True
+    def mark_reachable(cand_subr, fdidx):
+        if fdidx not in cand_subr._fdidx:
+            cand_subr._fdidx.append(fdidx)
         for it in cand_subr._encoding:
-            mark_reachable(it[1])
-    for encoding in encodings:
-        for it in encoding:
-            mark_reachable(it[1])
+            mark_reachable(it[1], fdidx)
+    if fdselect != None:
+        for encoding, fdidx in zip(encodings, fdselect):
+            for it in encoding:
+                mark_reachable(it[1], fdidx)
+    else:
+        for encoding in encodings:
+            for it in encoding:
+                mark_reachable(it[1], 0)
 
     # subrs = set()
     # subrs.update([it[1] for enc in encodings for it in enc])
-    subrs = [s for s in substrings if s._usages > 0 and s._reachable and s.subr_saving(use_usages=True, true_cost=True) > 0]
+    subrs = [s for s in substrings if s._usages > 0 and bool(s._fdidx) and s.subr_saving(use_usages=True, true_cost=True) > 0]
+    # gsubrs = [s for s in subrs if s._fdidx == -1]
+    # lsubrs = [[s for s in subrs if s._fdidx == fd] for fd in range(fdlen)]
 
-    bad_substrings = [s for s in substrings if s._usages == 0 or not s._reachable or s.subr_saving(use_usages=True, true_cost=True) <= 0]
+    bad_substrings = [s for s in substrings if s._usages == 0 or not bool(s._fdidx) or s.subr_saving(use_usages=True, true_cost=True) <= 0]
     print "%d substrings unused or negative savers" % len(bad_substrings)
 
-    if len(subrs) > NSUBRS_LIMIT:
-        # remove least effective subrs
-        print "%d subrs over the limit of subrs allowed" % len(subrs) - NSUBRS_LIMIT
-        subrs.sort(key=lambda s: s.subr_saving(use_usages=True, true_cost=True), reverse=True)
-        bad_substrings.extend(subrs[NSUBRS_LIMIT:])
-        del subrs[NSUBRS_LIMIT:]
+    gsubrs = []
+    lsubrs = [[] for _ in xrange(fdlen)]
+
+    subrs = [(-s.subr_saving(use_usages=True, true_cost=True), s) for s in subrs]
+    heapq.heapify(subrs)
+
+    while subrs and (any(len(s) < NSUBRS_LIMIT for s in lsubrs) or 
+                     len(gsubrs) < NSUBRS_LIMIT):
+        _, subr = heapq.heappop(subrs)
+        if len(subr._fdidx) == 1:
+            lsub_index = lsubrs[subr._fdidx[0]]
+            if len(gsubrs) < NSUBRS_LIMIT:
+                if len(lsub_index) < NSUBRS_LIMIT:
+                    # both have space
+                    gcost = test_call_cost(subr, gsubrs)
+                    lcost = test_call_cost(subr, lsub_index)
+
+                    if gcost < lcost:
+                        insert_by_usage(subr, gsubrs)
+                        subr._global = True
+                    else:
+                        insert_by_usage(subr, lsub_index)
+                else:
+                    # just gsubrs has space
+                    insert_by_usage(subr, gsubrs)
+                    subr._global = True
+            elif len(lsub_index) < NSUBRS_LIMIT:
+                # just lsubrs has space
+                insert_by_usage(subr, lsub_index)
+            else:
+                # we must skip :(
+                bad_substrings.append(subr)
+        else:
+            if len(gsubrs) < NSUBRS_LIMIT:
+                # we can put it in globals
+                insert_by_usage(subr, gsubrs)
+                subr._global = True
+            else:
+                # we must split this up into local subrs
+                #   skipping implementation for now, needs usage by FD
+                #   also needs to keep track of where this goes so that
+                #   calls can be updated
+                bad_substrings.append(subr)
+
+    bad_substrings.extend(subrs) # add any leftover subrs to bad_substrings
 
     def set_flatten(s): s._flatten = True
     map(set_flatten, bad_substrings)
 
-    calc_nesting(subrs)
+    calc_nesting(gsubrs)
+    map(calc_nesting, lsubrs)
 
-    too_nested = [s for s in subrs if s._max_call_depth > SUBR_NEST_LIMIT]
+    too_nested = [s for s in itertools.chain(*lsubrs) if s._max_call_depth > SUBR_NEST_LIMIT]
+    too_nested.extend([s for s in gsubrs if s._max_call_depth > SUBR_NEST_LIMIT])
     map(set_flatten, too_nested)
     bad_substrings.extend(too_nested)
-    subrs = [s for s in subrs if s._max_call_depth <= SUBR_NEST_LIMIT]
+    lsubrs = [[s for s in lsubrarr if s._max_call_depth <= SUBR_NEST_LIMIT] for lsubrarr in lsubrs]
+    gsubrs = [s for s in gsubrs if s._max_call_depth <= SUBR_NEST_LIMIT]
     print "%d substrings nested too deep" % len(too_nested)
-    too_nested = None
+    del too_nested
 
     print "%d substrings being flattened" % len(bad_substrings)
 
     # reorganize to minimize call cost of most frequent subrs
-    subrs.sort(key=lambda s: s._usages, reverse=True)
-    bias = psCharStrings.calcSubrBias(subrs)
-    if bias == 1131:
-        subrs = subrs[216:1240] + subrs[0:216] + subrs[1240:]
-    elif bias == 32768:
-        subrs = (subrs[2264:33901] + subrs[216:1240] +
-                    subrs[0:216] + subrs[1240:2264] + subrs[33901:])
-
     def update_position(idx, subr): subr._position = idx
-    map(update_position, range(len(subrs)), subrs)
+
+    gbias = psCharStrings.calcSubrBias(gsubrs)
+    lbias = [psCharStrings.calcSubrBias(s) for s in lsubrs]
+
+    for subr_arr, bias in zip(itertools.chain([gsubrs], lsubrs),
+                              itertools.chain([gbias], lbias)):
+        subr_arr.sort(key=lambda s: s._usages, reverse=True)
+
+        if bias == 1131:
+            subr_arr[:] = subr_arr[216:1240] + subr_arr[0:216] + subr_arr[1240:]
+        elif bias == 32768:
+            subr_arr[:] = (subr_arr[2264:33901] + subr_arr[216:1240] +
+                        subr_arr[0:216] + subr_arr[1240:2264] + subr_arr[33901:])
+        map(update_position, range(len(subr_arr)), subr_arr)
 
     for subr in sorted(bad_substrings, key=lambda s: len(s)):
         # NOTE: it is important this is run in order so shorter
         # substrings are run before longer ones
-        program = [rev_keymap[tok] for tok in subr.value()]
-        update_program(program, subr._encoding, bias)
-        subr._program = program
+        if len(subr._fdidx) > 0:
+            program = [rev_keymap[tok] for tok in subr.value()]
+            update_program(program, subr._encoding, gbias, lbias, None) # XXX this is broken?
+            subr._program = program
 
-    for subr in subrs:
-        program = [rev_keymap[tok] for tok in subr.value()]
-        if program[-1] not in ("endchar", "return"):
-            program.append("return")
-        update_program(program, subr._encoding, bias)
-        subr._program = program
+    for subr_arr, sel in zip(itertools.chain([gsubrs], lsubrs),
+                              itertools.chain([None], xrange(fdlen))):
+        for subr in subr_arr:
+            program = [rev_keymap[tok] for tok in subr.value()]
+            if program[-1] not in ("endchar", "return"):
+                program.append("return")
+            update_program(program, subr._encoding, gbias, lbias, sel)
+            subr._program = program
 
     # pr.disable()
     # pr.create_stats()
     # pr.dump_stats("totalstats")
 
     return {"glyph_encodings": dict(zip(glyph_set_keys, encodings)),
-            "subroutines": subrs}
+            "lsubrs": lsubrs,
+            "gsubrs": gsubrs}
 
 def calc_nesting(subrs):
     def increment_subr_depth(subr, depth):
-        subr._max_call_depth = depth
+        if not hasattr(subr, "_max_call_depth") or subr._max_call_depth < depth:
+            subr._max_call_depth = depth
 
         callees = deque([it[1] for it in subr._encoding])
 
@@ -737,32 +819,29 @@ def has_endchar(subr):
     return (subr._program[-1] == "endchar"
             or ((subr._program[-1] == "callsubr" or subr._program[-1] == "callgsubr")
                 and has_endchar(subr._encoding[-1][1])))
-    
-def apply_encoding(font, glyph_encodings, subrs):
-    """Apply the result of iterative_encode to a TTFont"""
 
-    assert len(font["CFF "].cff.topDictIndex) == 1
-    top_dict = font["CFF "].cff.topDictIndex[0]
-
-    bias = psCharStrings.calcSubrBias(subrs)
-
-    for subr in subrs:
-        item = psCharStrings.T2CharString(program=subr._program)
-        top_dict.GlobalSubrs.append(item)
-
-    for glyph, enc in glyph_encodings.iteritems():
-        charstring = top_dict.CharStrings[glyph]
-        update_program(charstring.program, enc, bias)
-
-def update_program(program, encoding, bias):
+def update_program(program, encoding, gbias, lbias_arr, fdidx):
     offset = 0
     for item in encoding:
+        s = slice(item[0] - offset, item[0] + item[1].length - offset)
         if item[1]._flatten:
-            program[(item[0] - offset):(item[0] + item[1].length - offset)] = item[1]._program
+            program[s] = item[1]._program
             offset += item[1].length - len(item[1]._program)
         else:
+            if not hasattr(item[1], "_position"):
+                import pdb; pdb.set_trace()
             assert hasattr(item[1], "_position"), "CandidateSubr without position in Subrs encountered"
-            program[(item[0] - offset):(item[0] + item[1].length - offset)] = [item[1]._position - bias, "callgsubr"]
+            if item[1]._global:
+                operator = "callgsubr"
+                bias = gbias
+            else:
+                # assert this is a local or global only used by one FD
+                assert len(item[1]._fdidx) == 1
+                assert fdidx == None or item[1]._fdidx[0] == fdidx
+                operator = "callsubr"
+                bias = lbias_arr[item[1]._fdidx[0]]
+                
+            program[s] = [item[1]._position - bias, operator]
             offset += item[1].length - 2
     return program
 
@@ -772,10 +851,59 @@ def compress_cff(font, out_file="compressed.otf"):
     # from guppy import hpy
     # hp = hpy()
 
-    ans = iterative_encode(font.getGlyphSet(), verbose=True)
+    assert len(font["CFF "].cff.topDictIndex) == 1
+    top_dict = font["CFF "].cff.topDictIndex[0]
+
+    multi_font = hasattr(top_dict, "FDArray")
+
+    if not multi_font:
+        n_locals = 1
+        fdsel = None
+    else:
+        n_locals = len(top_dict.FDArray)
+        fdsel = top_dict.FDSelect
+
+
+    ans = iterative_encode(font.getGlyphSet(), fdsel,
+                            n_locals, verbose=True)
+
     encoding = ans["glyph_encodings"]
-    subrs = ans["subroutines"]
-    apply_encoding(font, encoding, subrs)
+    lsubrs = ans["lsubrs"]
+    gsubrs = ans["gsubrs"]
+    gbias = psCharStrings.calcSubrBias(gsubrs)
+    lbias = [psCharStrings.calcSubrBias(subrs) for subrs in lsubrs]
+
+    if multi_font:
+        for (glyph, enc), sel in zip(encoding.iteritems(), top_dict.FDSelect):
+            charstring = top_dict.CharStrings[glyph]
+            update_program(charstring.program, enc, gbias, lbias, sel)
+
+        for fd in top_dict.FDArray:
+            if not hasattr(fd.Private, "Subrs"):
+                fd.Private.Subrs = cffLib.SubrsIndex()
+        for subrs, subrs_index in zip(itertools.chain([gsubrs], lsubrs),
+                                      itertools.chain([top_dict.GlobalSubrs], 
+                                         [fd.Private.Subrs for fd in top_dict.FDArray])):
+            for subr in subrs:
+                item = psCharStrings.T2CharString(program=subr._program)
+                subrs_index.append(item)
+    else:
+        for glyph, enc in encoding.iteritems():
+            charstring = top_dict.CharStrings[glyph]
+            update_program(charstring.program, enc, gbias, lbias, 0)
+
+        assert len(lsubrs) == 1
+
+        if not hasattr(top_dict.Private, "Subrs"):
+            fd.Private.Subrs = cffLib.SubrsIndex()
+        for subr in lsubrs[0]:
+            item = psCharStrings.T2CharString(program=subr._program)
+            top_dict.Private.Subrs.append(item)
+
+        for subr in gsubrs:
+            item = psCharStrings.T2CharString(program=subr._program)
+            top_dict.GlobalSubrs.append(item)
+
     font.save(out_file)
 
     # save CFF version
@@ -816,10 +944,7 @@ def main(filename=None, test=False, doctest=False, verbose_test=False, check=Fal
     if filename and len(filename) == 1:
         font = TTFont(filename[0])
         orig_size = os.path.getsize(filename[0])
-        # sf = SubstringFinder(font.getGlyphSet())
-        # substrings = sf.get_substrings()
-        # print("%d substrings found" % len(substrings))
-        # print
+
         print("Compressing font through iterative_encode:")
         out_name = "%s.compressed%s" % os.path.splitext(filename[0])
 
