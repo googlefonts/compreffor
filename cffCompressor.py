@@ -487,15 +487,19 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1,
         POOL_CHUNKRATIO = 0.11 # for logotype
     # NSUBRS_LIMIT = 32765 # 32K - 3
     NSUBRS_LIMIT = 65533 # 64K - 3
+    # NSUBRS_LIMIT = 200
     SUBR_NEST_LIMIT = 10
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
 
     if test_mode:
-        substrings = sf.get_substrings(min_freq=0, check_positive=False, sort_by_length=True)
+        substrings = sf.get_substrings(min_freq=0, check_positive=False, sort_by_length=False)
     else:
-        substrings = sf.get_substrings(min_freq=2, check_positive=True, sort_by_length=True)
+        substrings = sf.get_substrings(min_freq=2, check_positive=True, sort_by_length=False)
+
+    # remove unnecessary substrings?
+    # substrings = substrings[:NSUBRS_LIMIT * (fdlen + 1)]
 
     data = sf.data
     rev_keymap = sf.rev_keymap
@@ -602,9 +606,10 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1,
         for it in cand_subr._encoding:
             mark_reachable(it[1], fdidx)
     if fdselect != None:
-        for encoding, fdidx in zip(encodings, fdselect):
-            for it in encoding:
-                mark_reachable(it[1], fdidx)
+        for g, enc in zip(glyph_set_keys, encodings):
+            sel = fdselect(g)
+            for it in enc:
+                mark_reachable(it[1], sel)
     else:
         for encoding in encodings:
             for it in encoding:
@@ -657,13 +662,10 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1,
                 insert_by_usage(subr, gsubrs)
                 subr._global = True
             else:
-                # we must split this up into local subrs
-                #   skipping implementation for now, needs usage by FD
-                #   also needs to keep track of where this goes so that
-                #   calls can be updated
+                # no room for this one
                 bad_substrings.append(subr)
 
-    bad_substrings.extend(subrs) # add any leftover subrs to bad_substrings
+    bad_substrings.extend([s[1] for s in subrs]) # add any leftover subrs to bad_substrings
 
     def set_flatten(s): s._flatten = True
     map(set_flatten, bad_substrings)
@@ -807,7 +809,7 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose=False):
 
         if cur_enc_substr != None:
             encoding.append((last_idx, cur_enc_substr))
-        elif cur_enc_idx - last_idx > 1:
+        elif cur_enc_idx - last_idx > 1 and verbose:
             print "Weird charstring: %s" % (charstring,)
             print "Weird index: %d" % (cur_enc_idx,)
 
@@ -827,26 +829,32 @@ def has_endchar(subr):
 def update_program(program, encoding, gbias, lbias_arr, fdidx):
     offset = 0
     for item in encoding:
-        s = slice(item[0] - offset, item[0] + item[1].length - offset)
-        if item[1]._flatten:
-            program[s] = item[1]._program
-            offset += item[1].length - len(item[1]._program)
+        subr = item[1]
+        s = slice(item[0] - offset, item[0] + subr.length - offset)
+        if subr._flatten:
+            program[s] = subr._program
+            offset += subr.length - len(subr._program)
         else:
-            if not hasattr(item[1], "_position"):
+            if not hasattr(subr, "_position"):
                 import pdb; pdb.set_trace()
-            assert hasattr(item[1], "_position"), "CandidateSubr without position in Subrs encountered"
-            if item[1]._global:
+            assert hasattr(subr, "_position"), \
+                    "CandidateSubr without position in Subrs encountered"   
+
+            if subr._global:
                 operator = "callgsubr"
                 bias = gbias
             else:
                 # assert this is a local or global only used by one FD
-                assert len(item[1]._fdidx) == 1
-                assert fdidx == None or item[1]._fdidx[0] == fdidx
+                if not (fdidx == None or subr._fdidx[0] == fdidx):
+                    import pdb; pdb.set_trace()
+
+                assert len(subr._fdidx) == 1
+                assert fdidx == None or subr._fdidx[0] == fdidx
                 operator = "callsubr"
-                bias = lbias_arr[item[1]._fdidx[0]]
+                bias = lbias_arr[subr._fdidx[0]]
                 
-            program[s] = [item[1]._position - bias, operator]
-            offset += item[1].length - 2
+            program[s] = [subr._position - bias, operator]
+            offset += subr.length - 2
     return program
 
 def compress_cff(font, out_file="compressed.otf"):
@@ -868,8 +876,10 @@ def compress_cff(font, out_file="compressed.otf"):
         fdsel = top_dict.FDSelect
 
 
-    ans = iterative_encode(font.getGlyphSet(), fdsel,
-                            n_locals, verbose=True)
+    ans = iterative_encode(font.getGlyphSet(), 
+                           lambda g: top_dict.CharStrings.getItemAndSelector(g)[1],
+                           n_locals,
+                           verbose=False)
 
     encoding = ans["glyph_encodings"]
     lsubrs = ans["lsubrs"]
@@ -878,8 +888,9 @@ def compress_cff(font, out_file="compressed.otf"):
     lbias = [psCharStrings.calcSubrBias(subrs) for subrs in lsubrs]
 
     if multi_font:
-        for (glyph, enc), sel in zip(encoding.iteritems(), top_dict.FDSelect):
-            charstring = top_dict.CharStrings[glyph]
+        for g in top_dict.charset:
+            charstring, sel = top_dict.CharStrings.getItemAndSelector(g)
+            enc = encoding[g]
             update_program(charstring.program, enc, gbias, lbias, sel)
 
         for fd in top_dict.FDArray:
