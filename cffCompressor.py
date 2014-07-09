@@ -449,7 +449,8 @@ def insert_by_usage(subr, subrs):
     subrs.append(subr)
     subrs.sort(key=lambda s: s._usages, reverse=True)
 
-def iterative_encode(glyph_set, fdselect=None, fdlen=1, verbose=True, test_mode=False):
+def iterative_encode(glyph_set, fdselect=None, fdlen=1,
+                     verbose=True, test_mode=False):
     """
     Choose a subroutinization encoding for all charstrings in
     `glyph_set` using an iterative Dynamic Programming algorithm.
@@ -457,7 +458,9 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1, verbose=True, test_mode=
     iteratively optimizes.
 
     Arguments:
-    glyph_set -- the set of charstrings to encode
+    glyph_set -- the set of charstrings to encode (required)
+    fdselect -- the FDSelect array of the source font, or None
+    fdlen -- the number of FD's in the source font, or 1 if there are None
     verbose -- if True, print miscellanous info during iterations
     test_mode -- disables some checks (such as positive subr_saving)
 
@@ -488,11 +491,17 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1, verbose=True, test_mode=
 
     # generate substrings for marketplace
     sf = SubstringFinder(glyph_set)
+
     if test_mode:
         substrings = sf.get_substrings(min_freq=0, check_positive=False, sort_by_length=True)
     else:
         substrings = sf.get_substrings(min_freq=2, check_positive=True, sort_by_length=True)
-    substr_dict = {}
+
+    data = sf.data
+    rev_keymap = sf.rev_keymap
+    cost_map = sf.cost_map
+    glyph_set_keys = sf.glyph_set_keys
+    del sf
 
     if not SINGLE_PROCESS:
         pool = Pool(processes=PROCESSES)
@@ -501,12 +510,7 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1, verbose=True, test_mode=
         pool = DummyPool()
         pool.map = lambda f, *l, **kwargs: map(f, *l)
 
-    data = sf.data
-    rev_keymap = sf.rev_keymap
-    cost_map = sf.cost_map
-    glyph_set_keys = sf.glyph_set_keys
-
-    sf = None # garbage collect unnecessary stuff
+    substr_dict = {}
 
     import time; start_time = time.time()
 
@@ -541,7 +545,7 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1, verbose=True, test_mode=
         for substr, result in zip(substrings, substr_encodings):
             substr._encoding = [(enc_item[0], substrings[enc_item[1]]) for enc_item in result["encoding"]]
             substr._adjusted_cost = result["market_cost"]
-        substr_encodings = None # attempt to garbage collect this
+        del substr_encodings
 
         # minimize charstring costs in current market through DP
         encodings = pool.map(functools.partial(optimize_charstring,
@@ -700,7 +704,7 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1, verbose=True, test_mode=
         # substrings are run before longer ones
         if len(subr._fdidx) > 0:
             program = [rev_keymap[tok] for tok in subr.value()]
-            update_program(program, subr._encoding, gbias, lbias, None) # XXX this is broken?
+            update_program(program, subr._encoding, gbias, lbias, None)
             subr._program = program
 
     for subr_arr, sel in zip(itertools.chain([gsubrs], lsubrs),
