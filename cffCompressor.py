@@ -136,12 +136,15 @@ class CandidateSubr(object):
 
         tp = type(token)
         if issubclass(tp, basestring):
-            if token[:8] in ('hintmask', 'cntrmask'):
-                return 1 + len(token[8:])
+            if token[:8] in ("hintmask", "cntrmask"):
+                return 1 + len(token[9:])
             elif token in SINGLE_BYTE_OPS:
                 return 1
             else:
                 return 2
+        elif tp == tuple:
+            assert token[0] in ("hintmask", "cntrmask")
+            return 1 + len(token[1])
         elif tp == int:
             if -107 <= token <= 107:
                 return 1
@@ -228,7 +231,7 @@ class SubstringFinder(object):
                     # call cannot be placed between this token and
                     # the following.
                     _, tokennext = next(piter)
-                    tok = '%s %s' % (tok, tokennext)
+                    tok = (tok, tokennext)
                 if not tok in keymap:
                     keymap[tok] = next_key
                     self.rev_keymap.append(tok)
@@ -483,8 +486,8 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1,
     NROUNDS = 4
     global POOL_CHUNKRATIO
     if POOL_CHUNKRATIO == None:
-        # POOL_CHUNKRATIO = 0.05 # for latin
-        POOL_CHUNKRATIO = 0.11 # for logotype
+        POOL_CHUNKRATIO = 0.05 # for latin
+        # POOL_CHUNKRATIO = 0.11 # for logotype
     # NSUBRS_LIMIT = 32765 # 32K - 3
     NSUBRS_LIMIT = 65533 # 64K - 3
     # NSUBRS_LIMIT = 200
@@ -707,6 +710,7 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1,
         if len(subr._fdidx) > 0:
             program = [rev_keymap[tok] for tok in subr.value()]
             update_program(program, subr._encoding, gbias, lbias, None)
+            expand_hintmask(program)
             subr._program = program
 
     for subr_arr, sel in zip(itertools.chain([gsubrs], lsubrs),
@@ -716,6 +720,7 @@ def iterative_encode(glyph_set, fdselect=None, fdlen=1,
             if program[-1] not in ("endchar", "return"):
                 program.append("return")
             update_program(program, subr._encoding, gbias, lbias, sel)
+            expand_hintmask(program)
             subr._program = program
 
     # pr.disable()
@@ -857,6 +862,26 @@ def update_program(program, encoding, gbias, lbias_arr, fdidx):
             offset += subr.length - 2
     return program
 
+def collapse_hintmask(program):
+    """Takes in a charstring and returns the same charstring
+    with hintmasks combined into a single element"""
+
+    piter = iter(enumerate(program))
+
+    for i, tok in piter:
+        if tok in ("hintmask", "cntrmask"):
+            program[i:i+2] = [(program[i], program[i+1])]
+
+
+def expand_hintmask(program):
+    """Expands collapsed hintmask tokens into two tokens"""
+
+    for i in xrange(len(program)):
+        tok = program[i]
+        if isinstance(tok, tuple):
+            assert tok[0] in ("hintmask", "cntrmask")
+            program[i:i+1] = tok
+
 def compress_cff(font, out_file="compressed.otf"):
     """Compress a font using the iterative method and output result"""
 
@@ -873,11 +898,11 @@ def compress_cff(font, out_file="compressed.otf"):
         fdsel = None
     else:
         n_locals = len(top_dict.FDArray)
-        fdsel = top_dict.FDSelect
+        fdsel = lambda g: top_dict.CharStrings.getItemAndSelector(g)[1]
 
 
     ans = iterative_encode(font.getGlyphSet(), 
-                           lambda g: top_dict.CharStrings.getItemAndSelector(g)[1],
+                           fdsel,
                            n_locals,
                            verbose=False)
 
@@ -891,7 +916,9 @@ def compress_cff(font, out_file="compressed.otf"):
         for g in top_dict.charset:
             charstring, sel = top_dict.CharStrings.getItemAndSelector(g)
             enc = encoding[g]
+            collapse_hintmask(charstring.program)
             update_program(charstring.program, enc, gbias, lbias, sel)
+            expand_hintmask(charstring.program)
 
         for fd in top_dict.FDArray:
             if not hasattr(fd.Private, "Subrs"):
@@ -905,7 +932,9 @@ def compress_cff(font, out_file="compressed.otf"):
     else:
         for glyph, enc in encoding.iteritems():
             charstring = top_dict.CharStrings[glyph]
+            collapse_hintmask(charstring.program)
             update_program(charstring.program, enc, gbias, lbias, 0)
+            expand_hintmask(charstring.program)
 
         assert len(lsubrs) == 1
 

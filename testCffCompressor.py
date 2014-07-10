@@ -167,40 +167,22 @@ class TestCffCompressor(unittest.TestCase):
 
 
 def test_compression_integrity(orignal_file, compressed_file):
-    from fontTools.ttLib import TTFont
-    from fontTools.subset import _DecompressingT2Decompiler, _DehintingT2Decompiler
-    from fontTools.pens import basePen
+    import fontTools
+    import fontTools.subset
 
-    orig_font = TTFont(orignal_file)
+    orig_font = fontTools.ttLib.TTFont(orignal_file)
     orig_gset = orig_font.getGlyphSet()
-    comp_font = TTFont(compressed_file)
+    comp_font = fontTools.ttLib.TTFont(compressed_file)
     comp_gset = comp_font.getGlyphSet()
 
     assert orig_gset.keys() == comp_gset.keys()
 
-    for k in comp_font["CFF "].cff.keys():
-        f = comp_font["CFF "].cff[k]
-        cs = f.CharStrings
-
-        css = set()
-        for g in f.charset:
-            c,sel = cs.getItemAndSelector(g)
-            # Make sure it's decompiled.  We want our "decompiler" to walk
-            # the program, not the bytecode.
-            c.draw(basePen.NullPen())
-            subrs = getattr(c.private, "Subrs", [])
-            decompiler = _DehintingT2Decompiler(css, subrs, c.globalSubrs)
-            decompiler.execute(c)
-        for charstring in css:
-            charstring.drop_hints()
-        del css
-
-        for g in f.charset:
-            c,sel = cs.getItemAndSelector(g)
-            subrs = getattr(c.private, "Subrs", [])
-            decompiler = _DecompressingT2Decompiler(subrs, c.globalSubrs)
-            decompiler.execute(c)
-            c.program = c._decompressed
+    # decompress the compressed font
+    options = fontTools.subset.Options()
+    options.decompress = True
+    subsetter = fontTools.subset.Subsetter(options=options)
+    subsetter.populate(glyphs=comp_font.getGlyphOrder())
+    subsetter.subset(comp_font)
 
     passed = True
     for g in orig_gset.keys():
@@ -215,14 +197,15 @@ def test_compression_integrity(orignal_file, compressed_file):
         print "Fonts have differences :("
 
 def test_call_depth(compressed_file):
-    from fontTools.ttLib import TTFont
+    import fontTools
 
-    f = TTFont(compressed_file)
+    f = fontTools.ttLib.TTFont(compressed_file)
 
     check_cff_call_depth(f["CFF "].cff)
 
 def check_cff_call_depth(cff):
-    from fontTools.misc import psCharStrings
+    import fontTools
+    psCharStrings = fontTools.misc.psCharStrings
 
     SUBR_NESTING_LIMIT = 10
 
