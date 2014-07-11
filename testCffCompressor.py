@@ -1,5 +1,6 @@
 import unittest, random, sys
 import cffCompressor
+from fontTools.ttLib import TTFont
 from testDummy import DummyGlyphSet
 
 class TestCffCompressor(unittest.TestCase):
@@ -23,19 +24,21 @@ class TestCffCompressor(unittest.TestCase):
 
         self.cand_subr = cffCompressor.CandidateSubr(length, locations[0], 2, charstrings)
 
+        self.empty_compreffor = cffCompressor.Compreffor(None, test_mode=True)
+
     def test_iterative_encode(self):
         """Test iterative_encode function"""
 
-        ans = cffCompressor.iterative_encode(self.glyph_set, test_mode=True)
+        ans = self.empty_compreffor.iterative_encode(self.glyph_set)
         self.assertIsInstance(ans, dict)
 
-        # don't care about CandidateSubr objects, just take their length
         encs = ans["glyph_encodings"]
-        for k in encs.keys():
-            enc = [(i[0], i[1].length) for i in encs[k]]
-            encs[k] = tuple(enc)
 
-        self.assertEqual(encs, {'a': ((0, 5),), 'b': ((1, 5),), 'c': ((0, 5),)})
+        expected_subr_length = 5 # subr is (0, 1, 20, 21, 22)
+
+        for glyph_enc in encs.itervalues():
+            self.assertTrue(any(cs[1].length == expected_subr_length for cs in glyph_enc))
+
 
     def test_get_substrings_all(self):
         """Test get_substrings without restrictions"""
@@ -96,16 +99,33 @@ class TestCffCompressor(unittest.TestCase):
         self.assertEqual(human_size(3565158), "3.4 MB")
         self.assertEqual(human_size(6120328397), "5.7 GB")
 
-    def test_update_program(self):
+    def test_update_program_local(self):
         """Test update_program with only one replacement"""
 
         program = [7, 2, 10, 4, 8, 7, 0]
         substr = cffCompressor.CandidateSubr(3, (0, 1))
         substr._position = 5
+        substr._fdidx = [0]
+        substr._global = False
         encoding = [(1, substr)]
         bias = 0
 
-        cffCompressor.update_program(program, encoding, bias)
+        self.empty_compreffor.update_program(program, encoding, bias, [bias], 0)
+
+        self.assertEqual(program, [7, 5, "callsubr", 8, 7, 0])
+
+    def test_update_program_global(self):
+        """Test update_program with only one replacement"""
+
+        program = [7, 2, 10, 4, 8, 7, 0]
+        substr = cffCompressor.CandidateSubr(3, (0, 1))
+        substr._position = 5
+        substr._fdidx = [0]
+        substr._global = True
+        encoding = [(1, substr)]
+        bias = 0
+
+        self.empty_compreffor.update_program(program, encoding, bias, [bias], 0)
 
         self.assertEqual(program, [7, 5, "callgsubr", 8, 7, 0])
 
@@ -115,17 +135,20 @@ class TestCffCompressor(unittest.TestCase):
         program = [7, 2, 10, 4, 8, 7, 0]
         substr = cffCompressor.CandidateSubr(3, (0, 1))
         substr._position = 5
+        substr._global = True
         substr2 = cffCompressor.CandidateSubr(2, (0, 5))
         substr2._position = 21
+        substr2._global = True
         encoding = [(1, substr), (5, substr2)]
         bias = 0
 
-        cffCompressor.update_program(program, encoding, bias)
+        self.empty_compreffor.update_program(program, encoding, bias, [bias], 0)
 
         self.assertEqual(program, [7, 5, "callgsubr", 8, 21, "callgsubr"])
 
-    def x_test_multiple_nested_subr_calls(self):
-        """Test to make sure we can handle nested subrs"""
+    def test_multiple_nested_subr_calls(self):
+        """Test to make sure we can handle nested subrs. This is really just
+        a case to make check we're encoding optimally."""
 
         glyph_set = {'a': (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 20),
                      'b': (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 21),
@@ -136,8 +159,10 @@ class TestCffCompressor(unittest.TestCase):
                      'g': (0, 1, 2, 3, 4, 5, 6, 7, 14, 15, 16, 17, 18, 19, 26),}
         glyph_set = DummyGlyphSet(glyph_set)
         # import pdb; pdb.set_trace()
-        ans = cffCompressor.iterative_encode(glyph_set, test_mode=True)
+        ans = self.empty_compreffor.iterative_encode(glyph_set)
         print(ans["glyph_encodings"])
+        print(ans["lsubrs"])
+        print([s._encoding for s in ans["lsubrs"][0]])
 
     # ---
 
@@ -167,6 +192,9 @@ class TestCffCompressor(unittest.TestCase):
 
 
 def test_compression_integrity(orignal_file, compressed_file):
+    """Compares two fonts to confirm they are functionally equivalent. Note: 
+    it is assumed that `original_file` is decompressed already."""
+
     import fontTools
     import fontTools.subset
 
@@ -193,17 +221,24 @@ def test_compression_integrity(orignal_file, compressed_file):
 
     if passed:
         print "Fonts match!"
+        return True
     else:
         print "Fonts have differences :("
+        return False
 
 def test_call_depth(compressed_file):
+    """Runs `check_cff_call_depth` on a file"""
+
     import fontTools
 
     f = fontTools.ttLib.TTFont(compressed_file)
 
-    check_cff_call_depth(f["CFF "].cff)
+    return check_cff_call_depth(f["CFF "].cff)
 
 def check_cff_call_depth(cff):
+    """Checks that the Charstrings in the provided CFFFontSet
+    obey the rules for subroutine nesting."""
+
     import fontTools
     psCharStrings = fontTools.misc.psCharStrings
 
@@ -258,5 +293,7 @@ def check_cff_call_depth(cff):
 
     if track_info.max_for_all <= SUBR_NESTING_LIMIT:
         print "Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all
+        return track_info.max_for_all
     else:
         print "Subroutine nesting depth too deep :( [max nesting depth of %d]" % track_info.max_for_all
+        return track_info.max_for_all
