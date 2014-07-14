@@ -920,8 +920,9 @@ class Compreffor(object):
     def expand_hintmask(self, program):
         """Expands collapsed hintmask tokens into two tokens"""
 
-        for i in xrange(len(program)):
-            tok = program[i]
+        piter = iter(enumerate(program))
+
+        for i, tok in piter:
             if isinstance(tok, tuple):
                 assert tok[0] in ("hintmask", "cntrmask")
                 program[i:i+1] = tok
@@ -1072,7 +1073,7 @@ if __name__ == "__main__":
                                        repeated routines and generate subroutines
                                        to minimize the disk space needed to
                                        represent a font.""")
-    parser.add_argument("filename", help="the path to the font file")
+    parser.add_argument("filename", help="the path to the font file", nargs="?")
     parser.add_argument("comp_fname", nargs="?", metavar="compressed-file",
                         help="the path to the compressed file. if this is given"
                              " with the -c flag, it will be checked against "

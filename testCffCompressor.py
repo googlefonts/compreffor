@@ -164,7 +164,47 @@ class TestCffCompressor(unittest.TestCase):
         print(ans["lsubrs"])
         print([s._encoding for s in ans["lsubrs"][0]])
 
-    # ---
+    def test_expand_hintmask_single_middle(self):
+        """Non-edge usage of expand_hintmask"""
+
+        data = [1, 2, 3, 4, 5, ('hintmask', 7), 8, 9, 10]
+        self.empty_compreffor.expand_hintmask(data)
+        self.assertEqual(data, [1, 2, 3, 4, 5, 'hintmask', 7, 8, 9, 10])
+
+    def test_expand_hintmask_multi_middle(self):
+        """Non-edge usage of expand_hintmask with two items"""
+
+        data = [1, ('hintmask', 3), 4, 5, ('hintmask', 7), 8, 9, 10]
+        self.empty_compreffor.expand_hintmask(data)
+        self.assertEqual(data, [1, 'hintmask', 3, 4, 5, 'hintmask', 7, 8, 9, 10])
+
+    def test_expand_hintmask_multi_end(self):
+        """Non-edge usage of expand_hintmask with two items, one at end"""
+
+        data = [1, 2, 3, 4, 5, ('hintmask', 7), 8, ('hintmask', 10)]
+        self.empty_compreffor.expand_hintmask(data)
+        self.assertEqual(data, [1, 2, 3, 4, 5, 'hintmask', 7, 8, 'hintmask', 10])
+
+    def test_collapse_hintmask_single_middle(self):
+        """Non-edge usage of collapse_hintmask"""
+
+        data = [1, 2, 3, 4, 5, 'hintmask', 7, 8, 9, 10]
+        self.empty_compreffor.collapse_hintmask(data)
+        self.assertEqual(data, [1, 2, 3, 4, 5, ('hintmask', 7), 8, 9, 10])
+
+    def test_collapse_hintmask_multi_middle(self):
+        """Non-edge usage of collapse_hintmask with two items"""
+
+        data = [1, 'hintmask', 3, 4, 5, 'hintmask', 7, 8, 9, 10]
+        self.empty_compreffor.collapse_hintmask(data)
+        self.assertEqual(data, [1, ('hintmask', 3), 4, 5, ('hintmask', 7), 8, 9, 10])
+
+    def test_collapse_hintmask_multi_end(self):
+        """Non-edge usage of collapse_hintmask with two items, one at end"""
+
+        data = [1, 2, 3, 4, 5, 'hintmask', 7, 8, 'hintmask', 10]
+        self.empty_compreffor.collapse_hintmask(data)
+        self.assertEqual(data, [1, 2, 3, 4, 5, ('hintmask', 7), 8, ('hintmask', 10)])
 
     def test_tokenCost(self):
         """Make sure single tokens can have their cost calculated"""
