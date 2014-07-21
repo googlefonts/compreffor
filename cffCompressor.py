@@ -973,7 +973,7 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
             options = subset.Options()
             options.decompress = True
             subsetter = subset.Subsetter(options=options)
-            subsetter.populate(glyphs=font.ggetGlyphOrder())
+            subsetter.populate(glyphs=font.getGlyphOrder())
             subsetter.subset(font)
 
         if verbose:

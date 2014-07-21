@@ -233,8 +233,7 @@ class TestCffCompressor(unittest.TestCase):
 
 
 def test_compression_integrity(orignal_file, compressed_file):
-    """Compares two fonts to confirm they are functionally equivalent. Note: 
-    it is assumed that `original_file` is decompressed already."""
+    """Compares two fonts to confirm they are functionally equivalent"""
 
     import fontTools
     import fontTools.subset
@@ -251,6 +250,7 @@ def test_compression_integrity(orignal_file, compressed_file):
     options.decompress = True
     subsetter = fontTools.subset.Subsetter(options=options)
     subsetter.populate(glyphs=comp_font.getGlyphOrder())
+    subsetter.subset(orig_font)
     subsetter.subset(comp_font)
 
     passed = True
