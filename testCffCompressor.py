@@ -146,6 +146,7 @@ class TestCffCompressor(unittest.TestCase):
 
         self.assertEqual(program, [7, 5, "callgsubr", 8, 21, "callgsubr"])
 
+    # TODO: make this test actually work
     def test_multiple_nested_subr_calls(self):
         """Test to make sure we can handle nested subrs. This is really just
         a case to make check we're encoding optimally."""
@@ -158,7 +159,7 @@ class TestCffCompressor(unittest.TestCase):
                      'f': (0, 1, 2, 3, 4, 5, 6, 7, 14, 15, 16, 17, 18, 19, 25),
                      'g': (0, 1, 2, 3, 4, 5, 6, 7, 14, 15, 16, 17, 18, 19, 26),}
         glyph_set = DummyGlyphSet(glyph_set)
-        # import pdb; pdb.set_trace()
+
         ans = self.empty_compreffor.iterative_encode(glyph_set)
         print(ans["glyph_encodings"])
         print(ans["lsubrs"])

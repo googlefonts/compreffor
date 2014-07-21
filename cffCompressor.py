@@ -107,7 +107,16 @@ class CandidateSubr(object):
                 self.__cost = sum([self.cost_map[t] for t in self.value()])
             return self.__cost
         except:
-            raise Exception('Translated token not recognized') 
+            raise Exception('Translated token not recognized')
+
+    def real_cost(self, call_cost=5):
+        """Account for subroutine calls in cost computation. Not cached because
+        the subroutines used will change over time."""
+
+        cost = self.cost()
+        cost += sum(-it[1].cost() + call_cost if not it[1]._flatten else it[1].real_cost()
+                    for it in self._encoding)
+        return cost
 
     def subr_saving(self, use_usages=False, true_cost=False, call_cost=5, subr_overhead=3):
         """
@@ -115,6 +124,8 @@ class CandidateSubr(object):
         this substring.
 
         Arguments:
+        use_usages -- indicate to use the value in `_usages` rather than `freq`
+        true_cost -- take account of subroutine calls
         call_cost -- the cost to call a subroutine
         subr_overhead -- the cost to define a subroutine
         """
@@ -127,11 +138,10 @@ class CandidateSubr(object):
         else:
             amt = self.freq
 
-        cost = self.cost()
-
-        if true_cost and hasattr(self, "_encoding"):
-            # account for subroutine calls
-            cost -= sum([it[1].cost() - call_cost for it in self._encoding])
+        if not true_cost:
+            cost = self.cost()
+        else:
+            cost = self.real_cost(call_cost=call_cost)
 
         # TODO:
         # - If substring ends in "endchar", we need no "return"
@@ -397,22 +407,28 @@ class Compreffor(object):
     PROCESSES = 12
     NROUNDS = 4
     LATIN_POOL_CHUNKRATIO = 0.05
-    POOL_CHUNKRATIO = 0.01
+    POOL_CHUNKRATIO = 0.1
     CHUNK_CHARSET_CUTOFF = 1500
     # NSUBRS_LIMIT = 32765 # 32K - 3
     NSUBRS_LIMIT = 65533 # 64K - 3
     SUBR_NEST_LIMIT = 10
 
-    def __init__(self, font, verbose=False, test_mode=False, chunk_ratio=None,
-                 nrounds=None, single_process=None, processes=None,
-                 nsubrs_limit=None):
+    def __init__(self, font, verbose=False, print_status=False, test_mode=False,
+                 chunk_ratio=None, nrounds=None, single_process=None,
+                 processes=None, nsubrs_limit=None):
         """
         Initialize the compressor.
 
         Arguments:
         font -- the TTFont to compress, must be a CFF font
         verbose -- if True, print miscellanous info during iterations
+        print_status -- if True, print a few status updates
         test_mode -- disables some checks (such as positive subr_saving)
+        chunk_ratio -- sets the POOL_CHUNKRATIO parameter
+        nrounds -- specifies the number of rounds to run
+        single_process -- indicates not to parallelize
+        processes -- specify the number of parallel processes
+        nsubrs_limit -- specify the limit on the number of subrs in an INDEX
         """
 
         if isinstance(font, TTFont):
@@ -422,12 +438,12 @@ class Compreffor(object):
         else:
             print("Warning: non-TTFont given to Compreffor")
         self.verbose = verbose
+        self.print_status = print_status
         self.test_mode = test_mode
         
         if chunk_ratio != None:
             self.POOL_CHUNKRATIO = chunk_ratio
-        elif len(font["CFF "].cff.topDictIndex[0].charset) < self.CHUNK_CHARSET_CUTOFF:
-            print "hi"
+        elif font and len(font["CFF "].cff.topDictIndex[0].charset) < self.CHUNK_CHARSET_CUTOFF:
             self.POOL_CHUNKRATIO = self.LATIN_POOL_CHUNKRATIO
         if nrounds != None:
             self.NROUNDS = nrounds
@@ -576,7 +592,7 @@ class Compreffor(object):
             substr._usages = substr.freq # this is the frequency that the substring appears, 
                                         # not necessarily used
             substr._list_idx = idx
-            substr_dict[substr.value()] = (idx, substr._price) # XXX avoid excess data copying on fork
+            substr_dict[substr.value()] = (idx, substr._price) # NOTE: avoid excess data copying on fork
                                                                # probably can just pass substr
                                                                # if threading instead
 
@@ -607,7 +623,7 @@ class Compreffor(object):
                                                    cost_map=cost_map,
                                                    substr_dict=substr_dict,
                                                    verbose=self.verbose),
-                                 zip(glyph_set_keys, data),
+                                 data,
                                  chunksize=csize)
             encodings = [[(enc_item[0], substrings[enc_item[1]]) for enc_item in i["encoding"]] for i in encodings]
 
@@ -624,7 +640,7 @@ class Compreffor(object):
                     if substr:
                         substr._usages += 1
 
-            if self.verbose:
+            if self.verbose or self.print_status:
                 print("Round %d Done!" % (run_count + 1))
 
             if run_count <= self.NROUNDS - 2 and not self.test_mode:
@@ -633,8 +649,8 @@ class Compreffor(object):
                     bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True) <= 0]
                     substrings = [s for s in substrings if s.subr_saving(use_usages=True) > 0]
                 else:
-                    bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=True) <= 0]
-                    substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=True) > 0]
+                    bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=False) <= 0]
+                    substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=False) > 0]
 
                 for substr in bad_substrings:
                     # heuristic to encourage use of called substrings:
@@ -651,8 +667,9 @@ class Compreffor(object):
             if self.verbose:
                 print("")
 
-        if self.verbose:
-            print("Took %gs (to run iterative_encode)" % (time.time() - start_time))
+        if self.verbose or self.print_status:
+            print("Finished iterative market (%gs)" % (time.time() - start_time))
+            print("%d candidate subrs found" % len(substrings))
 
         def mark_reachable(cand_subr, fdidx):
             if fdidx not in cand_subr._fdidx:
@@ -673,7 +690,11 @@ class Compreffor(object):
 
         bad_substrings = [s for s in substrings if s._usages == 0 or not bool(s._fdidx) or s.subr_saving(use_usages=True, true_cost=True) <= 0]
         if self.verbose:
-            print("%d substrings unused or negative savers" % len(bad_substrings))
+            print("%d substrings unused or negative saving subrs" % len(bad_substrings))
+
+        def set_flatten(s): s._flatten = True
+        map(set_flatten, bad_substrings)
+
 
         gsubrs = []
         lsubrs = [[] for _ in xrange(fdlen)]
@@ -718,9 +739,9 @@ class Compreffor(object):
 
         bad_substrings.extend([s[1] for s in subrs]) # add any leftover subrs to bad_substrings
 
-        def set_flatten(s): s._flatten = True
         map(set_flatten, bad_substrings)
 
+        # fix any nesting issues
         self.calc_nesting(gsubrs)
         map(self.calc_nesting, lsubrs)
 
@@ -730,10 +751,11 @@ class Compreffor(object):
         bad_substrings.extend(too_nested)
         lsubrs = [[s for s in lsubrarr if s._max_call_depth <= self.SUBR_NEST_LIMIT] for lsubrarr in lsubrs]
         gsubrs = [s for s in gsubrs if s._max_call_depth <= self.SUBR_NEST_LIMIT]
+        too_nested = len(too_nested)
+
         if self.verbose:
-            print("%d substrings nested too deep" % len(too_nested))
+            print("%d substrings nested too deep" % too_nested)
             print("%d substrings being flattened" % len(bad_substrings))
-        del too_nested
 
         # reorganize to minimize call cost of most frequent subrs
         def update_position(idx, subr): subr._position = idx
@@ -819,8 +841,6 @@ class Compreffor(object):
                 program[s] = subr._program
                 offset += subr.length - len(subr._program)
             else:
-                if not hasattr(subr, "_position"):
-                    import pdb; pdb.set_trace()
                 assert hasattr(subr, "_position"), \
                         "CandidateSubr without position in Subrs encountered"   
 
@@ -829,9 +849,6 @@ class Compreffor(object):
                     bias = gbias
                 else:
                     # assert this is a local or global only used by one FD
-                    if not (fdidx == None or subr._fdidx[0] == fdidx):
-                        import pdb; pdb.set_trace()
-
                     assert len(subr._fdidx) == 1
                     assert fdidx == None or subr._fdidx[0] == fdidx
                     operator = "callsubr"
@@ -872,10 +889,6 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose):
             skip_idx = charstring[0]
             charstring = charstring[1]
             glyph_key = None
-        else:
-            glyph_key = charstring[0] # XXX remove this testing thing!
-            charstring = charstring[1]
-            skip_idx = None
     else:
         skip_idx = None
 
@@ -944,7 +957,7 @@ def human_size(num):
             num /= 1024.0
     return '%3.1f %s' % (num, 'GB')
 
-def main(filename=None, comp_fname=None, test=False,
+def main(filename=None, comp_fname=None, test=False, decompress=False,
          verbose=False, check=False, **comp_kwargs):
     if test:
         from testCffCompressor import TestCffCompressor
@@ -954,6 +967,14 @@ def main(filename=None, comp_fname=None, test=False,
     if filename and comp_fname == None:
         font = TTFont(filename)
         orig_size = os.path.getsize(filename)
+
+        if decompress:
+            from fontTools import subset
+            options = subset.Options()
+            options.decompress = True
+            subsetter = subset.Subsetter(options=options)
+            subsetter.populate(glyphs=font.ggetGlyphOrder())
+            subsetter.subset(font)
 
         if verbose:
             print("Compressing font through iterative_encode:")
@@ -996,11 +1017,16 @@ if __name__ == "__main__":
                              " `filename`.")
     parser.add_argument("-t", "--test", required=False, action="store_true",
                         default=False, help="run test cases")
+    parser.add_argument("-s", "--status", required=False, action="store_true",
+                        dest="print_status", default=False)
     parser.add_argument("-v", "--verbose", required=False, action="store_true",
                         dest="verbose", default=False)
     parser.add_argument("-c", "--check", required=False, action="store_true",
                         help="verify that the outputted font is valid and "
                              "functionally equivalent to the input")
+    parser.add_argument("-d", "--decompress", required=False, action="store_true",
+                        help="decompress source before compressing (necessary if "
+                             "there are subroutines in the source)")
     parser.add_argument("--chunkratio", required=False, type=float,
                         dest="chunk_ratio",
                         help="0-1, specify the percentage size of the"
