@@ -699,12 +699,12 @@ class Compreffor(object):
         gsubrs = []
         lsubrs = [[] for _ in xrange(fdlen)]
 
-        subrs = [(-s.subr_saving(use_usages=True, true_cost=True), s) for s in subrs]
-        heapq.heapify(subrs)
+        subrs.sort(key=lambda s: s.subr_saving(use_usages=True, true_cost=True))
 
         while subrs and (any(len(s) < self.NSUBRS_LIMIT for s in lsubrs) or 
                          len(gsubrs) < self.NSUBRS_LIMIT):
-            _, subr = heapq.heappop(subrs)
+            subr = subrs[-1]
+            del subrs[-1]
             if len(subr._fdidx) == 1:
                 lsub_index = lsubrs[subr._fdidx[0]]
                 if len(gsubrs) < self.NSUBRS_LIMIT:
