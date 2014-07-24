@@ -1,10 +1,11 @@
+O ?= 2
 
-CXXFLAGS = -c -std=c++0x
+CXXFLAGS = -std=c++0x -W -Wall -Wno-unused -Wno-unused-parameter -g
 CXXFLAGS += -DDEBUG -g
 CC=g++
 
-all: cffCompressor.o cffCompressor
-# debug: CXXFLAGS += -DDEBUG -g
-# debug: clean all
+all: cffCompressor
+cffCompressor: cffCompressor.o
+	$(CC) $(CXXFLAGS) -O$(O) -o $@ $^
 clean:
 	rm -f cffCompressor.o cffCompressor

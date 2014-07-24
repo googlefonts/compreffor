@@ -7,106 +7,33 @@
 #include <string>
 
 typedef std::map<std::string, unsigned int> tokmap_t;
+typedef uint32_t int_type;
+const unsigned int int_size = sizeof(int_type);
 
 class token_t {
 public:
-  typedef uint32_t int_type;
-
   token_t (int_type value_ = 0) : value(value_) {}
   token_t (token_t &other) : value(other.value) {}
   token_t (const token_t &other) : value(other.value) {}
-  token_t (unsigned char* data, unsigned int len) {
-    assert(len > 0);
-    assert(len < 256);
-    if (len < int_size) {
-      unsigned int i = 0;
-      int_type v = len;
-      while (i++ < len) {
-        v <<= 8;
-        v |= data[i];
-      }
-      v <<= 8 * (int_size - len - 1);
-      value = v;
-    }
-    else {
-      unsigned int q = quarkFor(data, len);
-      int_type v = len;
-      v <<= 8;
-      v |= data[0];
-      v <<= 16;
-      v |= q;
-      value = v;
-      // std::cout << "QUARK: " << q << std::endl;
-    }
-  }
 
-  unsigned int size();
+  unsigned int size() {
+    return (value & 0xff000000) >> 24;
+  }
 
 private:
-  static const unsigned int int_size = sizeof (int_type);
   int_type value;
-
-  static tokmap_t quarkmap;
-
-  static inline unsigned int quarkFor(unsigned char* data, unsigned int len) {
-    // TODO: verify using a string key isn't a time problem
-    std::string key((const char*) data, (size_t) len);
-    if (quarkmap.find(key) == quarkmap.end()) {
-      assert(next_quark < 65536);
-      unsigned int q = next_quark++;
-      quarkmap[key] = q;
-      return q;
-    }
-    else {
-      return quarkmap[key];
-    }
-  }
-
-  static unsigned int next_quark;
 };
 
-unsigned int token_t::next_quark = 0;
-tokmap_t token_t::quarkmap;
+class charstring_pool_t {
+public:
+  charstring_pool_t (unsigned int nCharstrings) 
+    : quarkMap(), nextQuark(0), offset(nCharstrings), fdselect(nCharstrings) {}
 
-unsigned int token_t::size() {
-  return (value & 0xff000000) >> 24;
-}
-
-std::vector<token_t> tokenPool;
-
-
-int main(int argc, const char* argv[]) {
-  uint16_t count;
-  unsigned char countBuffer[2];
-  std::cin.read((char*) countBuffer, 2);
-  count = (countBuffer[0] << 8) | (countBuffer[1]); // XXX
-  std::cout << "count: " << count << std::endl;
-
-  unsigned char offSize;
-  std::cin.read((char*) &offSize, 1);
-  std::cout << "offSize: " << (int) offSize << std::endl;
-
-  uint32_t offset[count + 1];
-  unsigned char offsetBuffer[(count + 1) * offSize];
-  std::cin.read((char*) offsetBuffer, (count + 1) * offSize);
-  for (int i = 0; i < count + 1; ++i) {
-    offset[i] = 0;
-    for (int j = 0; j < offSize; ++j) {
-      offset[i] += offsetBuffer[i * offSize + j] << ((offSize - j - 1) * 8);
-    }
-    offset[i] -= 1; // CFF is 1-indexed(-ish)
-  }
-  assert(offset[0] == 0);
-  std::cout << "offset loaded" << std::endl;
-
-  unsigned int csOffset[count];
-  unsigned int csSize, nToks;
-  for (int i = 0; i < count; ++i) {
-    csSize = offset[i + 1] - offset[i];
-    nToks = 0;
-    for (int csPos = 0; csPos < csSize; ++csPos) {
+  void readCharString(std::istream &stream, unsigned int len) {
+    unsigned int nToks = 0;
+    for (int csPos = 0; csPos < len; ++csPos) {
       unsigned char first;
-      std::cin.read((char*) &first, 1);
+      stream.read((char*) &first, 1);
       unsigned int tokSize;
       if (first < 12)
         // operators
@@ -146,33 +73,119 @@ int main(int argc, const char* argv[]) {
 
       unsigned char rawTok[tokSize];
       rawTok[0] = first;
-      std::cin.read((char*) rawTok + 1, tokSize - 1);
+      stream.read((char*) rawTok + 1, tokSize - 1);
 
-      token_t nextTok(rawTok, tokSize);
-      tokenPool.push_back(nextTok);
+      addRawToken(rawTok, tokSize);
 
       ++nToks;
     }
 
-    if (i > 0)
-      csOffset[i] = csOffset[i - 1] + nToks;
-    else
-      csOffset[i] = 0;
+    offset.push_back(nToks);
   }
 
-  char fdselectIndicator;
+  void setFDSelect() {
+
+  }
+
+private:
+  tokmap_t quarkMap;
+  unsigned int nextQuark;
+  std::vector<token_t> pool;
+  std::vector<token_t> offset;
+  std::vector<token_t> fdselect;
+
+  inline unsigned int quarkFor(unsigned char* data, unsigned int len) {
+    // TODO: verify using a string key isn't a time problem
+    std::string key((const char*) data, (size_t) len);
+    if (quarkMap.find(key) == quarkMap.end()) {
+      assert(nextQuark < 65536);
+      unsigned int q = nextQuark++;
+      quarkMap[key] = q;
+      return q;
+    }
+    else {
+      return quarkMap[key];
+    }
+  }
+
+  void addRawToken(unsigned char* data, unsigned int len) {
+    assert(len > 0);
+    assert(len < 256);
+    int_type v;
+    if (len < int_size) {
+      unsigned int i = 0;
+      v = len;
+      while (i++ < len) {
+        v <<= 8;
+        v |= data[i];
+      }
+      v <<= 8 * (int_size - len - 1);
+    }
+    else {
+      unsigned int q = quarkFor(data, len);
+      v = len;
+      v <<= 8;
+      v |= data[0];
+      v <<= 16;
+      v |= q;
+      // std::cout << "QUARK: " << q << std::endl;
+    }
+    pool.push_back(token_t(v));
+  }
+};
+
+charstring_pool_t charstringPoolFactory(std::istream &instream) {
+  uint16_t count;
+  unsigned char countBuffer[2];
+  instream.read((char*) countBuffer, 2);
+  count = (countBuffer[0] << 8) | (countBuffer[1]); // XXX
+  std::cout << "count: " << count << std::endl;
+
+  unsigned char offSize;
+  instream.read((char*) &offSize, 1);
+  std::cout << "offSize: " << (int) offSize << std::endl;
+
+  uint32_t offset[count + 1];
+  unsigned char offsetBuffer[(count + 1) * offSize];
+  instream.read((char*) offsetBuffer, (count + 1) * offSize);
+  for (int i = 0; i < count + 1; ++i) {
+    offset[i] = 0;
+    for (int j = 0; j < offSize; ++j) {
+      offset[i] += offsetBuffer[i * offSize + j] << ((offSize - j - 1) * 8);
+    }
+    offset[i] -= 1; // CFF is 1-indexed(-ish)
+  }
+  assert(offset[0] == 0);
+  std::cout << "offset loaded" << std::endl;
+
+  charstring_pool_t csPool(count);
+
+  for (int i = 0; i < count; ++i) {
+    csPool.readCharString(instream, offset[i + 1] - offset[i]);
+  }
+
+  std::cout << "loaded " << offset[count] << " bytes of charstrings" << std::endl;
+
+  unsigned char fdCount;
   unsigned char* fdselect;
-  std::cin.read(&fdselectIndicator, 1);
-  if (fdselectIndicator == 'y') {
+  instream.read((char *) &fdCount, 1);
+  if (fdCount > 1) {
     unsigned char buf[count];
-    std::cin.read((char*) buf, count);
+    instream.read((char*) buf, count);
     fdselect = buf;
     std::cout << "loaded FDSelect" << std::endl;
   }
   else {
     fdselect = NULL;
-    std::cout << "no FDSelect provided" << std::endl;
+    std::cout << "no FDSelect loaded" << std::endl;
   }
+
+  return csPool;
+}
+
+
+int main(int argc, const char* argv[]) {
+  charstring_pool_t csPool = charstringPoolFactory(std::cin);
 
   return 0;
 }
