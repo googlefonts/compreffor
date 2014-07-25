@@ -3,10 +3,16 @@
 #include <string.h>
 #include <map>
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
 
+class token_t;
+struct charstring_t;
+class charstring_pool_t;
+
 typedef std::map<std::string, unsigned int> tokmap_t;
+typedef std::vector<token_t>::iterator tokiter_t;
 typedef uint32_t int_type;
 const unsigned int int_size = sizeof(int_type);
 
@@ -16,22 +22,58 @@ public:
   token_t (token_t &other) : value(other.value) {}
   token_t (const token_t &other) : value(other.value) {}
 
-  unsigned int size() {
+  inline int_type getValue() const {
+    return value;
+  }
+
+  inline unsigned int size() {
     return (value & 0xff000000) >> 24;
+  }
+
+  inline unsigned int part(const unsigned int idx) const {
+    assert(idx < 4);
+    char shift = (int_size - idx - 1) * 8;
+    return (value & (0xff << shift)) >> shift;
   }
 
 private:
   int_type value;
 };
 
+std::ostream& operator<<(std::ostream &stream, const token_t &tok) {
+  return stream << "token_t(" << tok.part(0) << ", " << tok.part(1) << 
+                   ", " << tok.part(2) << ", " << tok.part(3) << ")";
+}
+
+struct charstring_t {
+  tokiter_t begin;
+  tokiter_t end;
+  unsigned char fd;
+};
+
 class charstring_pool_t {
 public:
   charstring_pool_t (unsigned int nCharstrings) 
-    : quarkMap(), nextQuark(0), offset(nCharstrings), fdselect(nCharstrings) {}
+    : nextQuark(0), fdSelectTrivial(true), count(nCharstrings) {
+      pool.reserve(nCharstrings);
+      offset.reserve(nCharstrings + 1);
+      offset.push_back(0);
+    }
+
+  charstring_t getCharstring(unsigned int idx) {
+    charstring_t cs;
+    cs.begin = pool.begin() + offset[idx];
+    cs.end = pool.begin() + offset[idx + 1];
+    if (fdSelectTrivial)
+      cs.fd = 0;
+    else
+      cs.fd = fdSelect[idx];
+    return cs;
+  }
 
   void readCharString(std::istream &stream, unsigned int len) {
     unsigned int nToks = 0;
-    for (int csPos = 0; csPos < len; ++csPos) {
+    for (unsigned int csPos = 0; csPos < len; ++csPos) {
       unsigned char first;
       stream.read((char*) &first, 1);
       unsigned int tokSize;
@@ -79,20 +121,28 @@ public:
 
       ++nToks;
     }
-
-    offset.push_back(nToks);
+  
+    offset.push_back(offset.back() + nToks);
   }
 
-  void setFDSelect() {
-
+  void setFDSelect(unsigned char* rawFD) {
+    if (rawFD == NULL) {
+      fdSelectTrivial = true;
+    }
+    else {
+      fdSelectTrivial = false;
+      std::vector<unsigned char> fdSelect(rawFD, rawFD + count);
+    }
   }
 
 private:
   tokmap_t quarkMap;
   unsigned int nextQuark;
   std::vector<token_t> pool;
-  std::vector<token_t> offset;
-  std::vector<token_t> fdselect;
+  std::vector<unsigned int> offset;
+  std::vector<unsigned char> fdSelect;
+  bool fdSelectTrivial;
+  unsigned int count;
 
   inline unsigned int quarkFor(unsigned char* data, unsigned int len) {
     // TODO: verify using a string key isn't a time problem
@@ -115,7 +165,7 @@ private:
     if (len < int_size) {
       unsigned int i = 0;
       v = len;
-      while (i++ < len) {
+      for (; i < len; ++i) {
         v <<= 8;
         v |= data[i];
       }
@@ -179,6 +229,7 @@ charstring_pool_t charstringPoolFactory(std::istream &instream) {
     fdselect = NULL;
     std::cout << "no FDSelect loaded" << std::endl;
   }
+  csPool.setFDSelect(fdselect);
 
   return csPool;
 }

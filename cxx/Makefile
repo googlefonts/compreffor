@@ -6,6 +6,6 @@ CC=g++
 
 all: cffCompressor
 cffCompressor: cffCompressor.o
-	$(CC) $(CXXFLAGS) -O$(O) -o $@ $^
+	$(CC) $(CXXFLAGS) -o $@ $^
 clean:
 	rm -f cffCompressor.o cffCompressor
