@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include <algorithm>
 #include <map>
 #include <iostream>
 #include <fstream>
@@ -19,21 +20,28 @@ const unsigned int int_size = sizeof(int_type);
 class token_t {
 public:
   token_t (int_type value_ = 0) : value(value_) {}
-  token_t (token_t &other) : value(other.value) {}
   token_t (const token_t &other) : value(other.value) {}
 
   inline int_type getValue() const {
     return value;
   }
 
-  inline unsigned int size() {
-    return (value & 0xff000000) >> 24;
+  inline unsigned int size() const {
+    return part(0);
   }
 
-  inline unsigned int part(const unsigned int idx) const {
+  inline unsigned int part(unsigned int idx) const {
     assert(idx < 4);
     char shift = (int_size - idx - 1) * 8;
     return (value & (0xff << shift)) >> shift;
+  }
+
+  bool operator<(const token_t &other) {
+    return value < other.value;
+  }
+
+  bool operator!=(const token_t &other) {
+    return value != other.value;
   }
 
 private:
@@ -54,11 +62,20 @@ struct charstring_t {
 class charstring_pool_t {
 public:
   charstring_pool_t (unsigned int nCharstrings) 
-    : nextQuark(0), fdSelectTrivial(true), count(nCharstrings) {
+    : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
+      finalized(false) {
       pool.reserve(nCharstrings);
       offset.reserve(nCharstrings + 1);
       offset.push_back(0);
     }
+
+  void generateSuffixes() {
+    assert(suffixes.size() == 0 && finalized);
+    for (unsigned int i = 0; i < pool.size(); ++i)
+      suffixes.push_back(i);
+
+    std::sort(suffixes.begin(), suffixes.end(), suffixSortFunctor(pool, offset, rev));
+  }
 
   charstring_t getCharstring(unsigned int idx) {
     charstring_t cs;
@@ -71,11 +88,10 @@ public:
     return cs;
   }
 
-  void readCharString(std::istream &stream, unsigned int len) {
+  void addRawCharstring(char* data, unsigned int len) {
     unsigned int nToks = 0;
     for (unsigned int csPos = 0; csPos < len; ++csPos) {
-      unsigned char first;
-      stream.read((char*) &first, 1);
+      unsigned char first = data[csPos];
       unsigned int tokSize;
       if (first < 12)
         // operators
@@ -111,11 +127,10 @@ public:
         // 4-byte floating point
         tokSize = 5;
 
-      csPos += (tokSize - 1);
-
       unsigned char rawTok[tokSize];
       rawTok[0] = first;
-      stream.read((char*) rawTok + 1, tokSize - 1);
+      memcpy(rawTok + 1, data + csPos + 1, tokSize - 1);
+      csPos += (tokSize - 1);
 
       addRawToken(rawTok, tokSize);
 
@@ -135,14 +150,29 @@ public:
     }
   }
 
+  void finalize() {
+    rev.reserve(pool.size());
+    int cur = 0;
+    for (unsigned int i = 0; i < pool.size(); ++i) {
+      if (i >= offset[cur + 1])
+        ++cur;
+      rev.push_back(cur);
+    }
+
+    finalized = true;
+  }
+
 private:
   tokmap_t quarkMap;
   unsigned int nextQuark;
   std::vector<token_t> pool;
   std::vector<unsigned int> offset;
   std::vector<unsigned char> fdSelect;
+  std::vector<unsigned int> suffixes;
+  std::vector<unsigned int> rev;
   bool fdSelectTrivial;
   unsigned int count;
+  bool finalized;
 
   inline unsigned int quarkFor(unsigned char* data, unsigned int len) {
     // TODO: verify using a string key isn't a time problem
@@ -182,6 +212,35 @@ private:
     }
     pool.push_back(token_t(v));
   }
+
+  struct suffixSortFunctor {
+    const std::vector<token_t> &pool;
+    const std::vector<unsigned int> &offset;
+    const std::vector<unsigned int> &rev;
+    suffixSortFunctor(const std::vector<token_t> &_pool,
+                      const std::vector<unsigned int> &_offset,
+                      const std::vector<unsigned int> &_rev) 
+                    : pool(_pool), offset(_offset), rev(_rev) {}
+    bool operator()(unsigned int a, unsigned int b) {
+      int aLen = offset[rev[a] + 1] - a;
+      int bLen = offset[rev[b] + 1] - b;
+      if (aLen == bLen) {
+        auto aIter = pool.begin() + a;
+        auto bIter = pool.begin() + b;
+        for (int i = 0; i < aLen; ++i) {
+          if (((token_t) *aIter) != *bIter)
+            return ((token_t) *aIter) < *bIter;
+
+          ++aIter;
+          ++bIter;
+        }
+        return false;
+      }
+      else {
+        return aLen < bLen;
+      }
+    }
+  };
 };
 
 charstring_pool_t charstringPoolFactory(std::istream &instream) {
@@ -210,8 +269,12 @@ charstring_pool_t charstringPoolFactory(std::istream &instream) {
 
   charstring_pool_t csPool(count);
 
+  unsigned int len;
   for (int i = 0; i < count; ++i) {
-    csPool.readCharString(instream, offset[i + 1] - offset[i]);
+    unsigned int len = offset[i + 1] - offset[i];
+    char data[len];
+    instream.read(data, len);
+    csPool.addRawCharstring(data, len);
   }
 
   std::cout << "loaded " << offset[count] << " bytes of charstrings" << std::endl;
@@ -231,12 +294,16 @@ charstring_pool_t charstringPoolFactory(std::istream &instream) {
   }
   csPool.setFDSelect(fdselect);
 
+  csPool.finalize();
+
   return csPool;
 }
 
 
 int main(int argc, const char* argv[]) {
   charstring_pool_t csPool = charstringPoolFactory(std::cin);
+
+  csPool.generateSuffixes();
 
   return 0;
 }
