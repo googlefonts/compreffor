@@ -13,7 +13,7 @@ def write_data(td, f):
     try:
         fdselect = struct.pack('b', len(td.FDArray)) + array.array('B', list(td.FDSelect)).tostring()
     except AttributeError:
-        fdselect = struct.pack('b', 1) + array.array('B', [-2]).tostring()
+        fdselect = struct.pack('b', 1)
     f.write(fdselect)
 
 if __name__ == '__main__':
