@@ -59,14 +59,14 @@ public:
   bool operator!=(const substring_t &other) const;
   substring_t& operator=(const substring_t &other);
   void setLeft(substring_t *subr) { left = subr; }
-  void setRight(substring_t *subr) { right = subr; }
+  void setRight(substring_t *subr) { left = subr; }
 
 private:
   const charstring_pool_t &chPool;
-  unsigned start;
-  unsigned len;
-  unsigned freq;
-  int _cost;
+  uint32_t start;
+  uint32_t len;
+  uint32_t freq;
+  short _cost;
   substring_t *left;
   substring_t *right;
 
@@ -100,6 +100,8 @@ private:
   std::vector<unsigned> generateSuffixes();
   struct suffixSortFunctor;
   std::vector<unsigned> generateLCP(std::vector<unsigned> &suffixes);
+  std::vector<substring_t> generateSubstrings(std::vector<unsigned> &suffixes,
+                                              std::vector<unsigned> &lcp);
 
 };
 

@@ -132,6 +132,7 @@ void charstring_pool_t::getSubstrings() {
 
   std::vector<unsigned> suffixes = generateSuffixes();
   std::vector<unsigned> lcp = generateLCP(suffixes);
+  std::vector<substring_t> substrings = generateSubstrings(suffixes, lcp);
 }
 
 charstring_t charstring_pool_t::getCharstring(unsigned idx) {
@@ -343,6 +344,58 @@ std::vector<unsigned> charstring_pool_t::generateLCP(std::vector<unsigned> &suff
   }
 
   return lcp;
+}
+
+std::vector<substring_t> charstring_pool_t::generateSubstrings
+              (std::vector<unsigned> &suffixes, std::vector<unsigned> &lcp) {
+  assert(finalized);
+  assert(suffixes.size() == lcp.size());
+  assert(lcp.size() == pool.size());
+
+  std::vector<substring_t> substrings;
+  std::list<std::pair<unsigned, unsigned>> startIndices;
+
+  std::vector<unsigned>::iterator sufIt = suffixes.begin();
+  std::vector<unsigned>::iterator lcpIt = lcp.begin();
+  for (unsigned i = 0; sufIt != suffixes.end() && lcpIt != lcp.end(); ++sufIt, ++lcpIt, ++i) {
+    while (!startIndices.empty() && startIndices.back().first > *lcpIt) {
+      std::pair<unsigned, unsigned> cur = startIndices.back();
+      unsigned len = cur.first;
+      unsigned startIdx = cur.second;
+      startIndices.pop_back();
+
+      unsigned freq = i - startIdx;
+      if (freq < 2) { // NOTE: python allows tuning this
+        break;
+      }
+
+      uint32_t curLen;
+      if (startIndices.empty())
+        curLen = 0;
+      else
+        curLen = startIndices.back().first + 1;
+
+      for (; curLen < len; ++curLen) {
+        substring_t subr(*this, curLen, suffixes[startIdx], freq);
+        if (curLen > 1) {
+          subr.setLeft(&substrings.back());
+        }
+        if (subr.subrSaving() > 0) // NOTE: python allows turning this check off
+          substrings.push_back(subr);
+      }
+    }
+
+    if (startIndices.empty() || *lcpIt > startIndices.back().first) {
+      startIndices.push_back(std::pair<unsigned, unsigned>(*lcpIt, i - 1));
+    }
+  }
+
+  // NOTE: python also allows sorting by length
+  std::sort(substrings.begin(), substrings.end(), 
+    [](const substring_t a, const substring_t b) {return a.subrSaving() < b.subrSaving();});
+
+  std::cout << substrings.size();
+  return substrings;
 }
 
 
