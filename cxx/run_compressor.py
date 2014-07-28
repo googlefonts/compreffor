@@ -19,7 +19,7 @@ def write_data(td, f):
 if __name__ == '__main__':
     f = TTFont(sys.argv[1])
     td = f['CFF '].cff.topDictIndex[0]
-    print("# of charstrings == %d" % len(td.CharStrings))
+    print("PYTHON>>> # of charstrings == %d" % len(td.CharStrings))
 
     p = subprocess.Popen(['./cffCompressor'], stdin=subprocess.PIPE)
     write_data(td, p.stdin)
