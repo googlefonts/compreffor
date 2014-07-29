@@ -1,6 +1,6 @@
 #include "cffCompressor.h"
 
-// token_t
+// token_t ============
 token_t::token_t (int_type value_) : value(value_) {}
 token_t::token_t (const token_t &other) : value(other.value) {}
 
@@ -40,15 +40,36 @@ bool token_t::operator==(const token_t &other) const {
 std::ostream& operator<<(std::ostream &stream, const token_t &tok) {
   return stream << tok.toString();
 }
+// end token_t =========
 
 
-// substring_t
+// substring_t =========
 substring_t::substring_t (charstring_pool_t &_chPool, unsigned _len, unsigned _start, unsigned _freq)
   : chPool(_chPool), start(_start), len(_len), freq(_freq), _cost(-1) {}
 
 substring_t::substring_t (const substring_t &other)
   : chPool(other.chPool), start(other.start), len(other.len), freq(other.freq),
     _cost(-1) {}
+
+const_tokiter_t substring_t::begin() const {
+  return chPool.getTokenIter(start);
+}
+
+const_tokiter_t substring_t::end() const {
+  return begin() + len;
+}
+
+std::string substring_t::toString() {
+  std::ostringstream os;
+  os << "[";
+  auto it = begin();
+  for (; it != end() - 1; ++it) {
+    os << *it << ", ";
+  }
+  ++it;
+  os << *it << "]";
+  return os.str();
+}
 
 int substring_t::cost() {
   if (_cost != -1) {
@@ -116,8 +137,10 @@ bool substring_t::operator==(const substring_t &other) const {
 bool substring_t::operator!=(const substring_t &other) const {
   return !(*this == other);
 }
+// end substring_t ============
 
-// charstring_pool_t
+
+// charstring_pool_t ==========
 charstring_pool_t::charstring_pool_t (unsigned nCharstrings)
   : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
     finalized(false) {
@@ -226,7 +249,6 @@ const_tokiter_t charstring_pool_t::getTokenIter(unsigned idx) const {
   return pool.begin() + idx;
 }
 
-// PRIVATE:
 inline unsigned charstring_pool_t::quarkFor(unsigned char* data, unsigned len) {
   // TODO: verify using a string key isn't a time problem
   std::string key((const char*) data, (size_t) len);
@@ -355,19 +377,15 @@ std::vector<substring_t> charstring_pool_t::generateSubstrings
   std::vector<substring_t> substrings;
   std::list<std::pair<unsigned, unsigned>> startIndices;
 
-  std::vector<unsigned>::iterator sufIt = suffixes.begin();
-  std::vector<unsigned>::iterator lcpIt = lcp.begin();
-  for (unsigned i = 0; sufIt != suffixes.end() && lcpIt != lcp.end(); ++sufIt, ++lcpIt, ++i) {
-    while (!startIndices.empty() && startIndices.back().first > *lcpIt) {
+  for (unsigned i = 0; i < suffixes.size(); ++i) {
+    while (!startIndices.empty() && startIndices.back().first > lcp[i]) {
       std::pair<unsigned, unsigned> cur = startIndices.back();
       unsigned len = cur.first;
       unsigned startIdx = cur.second;
       startIndices.pop_back();
 
       unsigned freq = i - startIdx;
-      if (freq < 2) { // NOTE: python allows tuning this
-        break;
-      }
+      assert(freq >= 2); // NOTE: python allows different min_freq
 
       uint32_t curLen;
       if (startIndices.empty())
@@ -375,28 +393,30 @@ std::vector<substring_t> charstring_pool_t::generateSubstrings
       else
         curLen = startIndices.back().first + 1;
 
-      for (; curLen < len; ++curLen) {
+      for (; curLen <= len; ++curLen) {
         substring_t subr(*this, curLen, suffixes[startIdx], freq);
         if (curLen > 1) {
           subr.setLeft(&substrings.back());
-        }
-        if (subr.subrSaving() > 0) // NOTE: python allows turning this check off
+        // if (subr.subrSaving() > 0) // NOTE: python allows turning this check off
           substrings.push_back(subr);
+        }
       }
     }
 
-    if (startIndices.empty() || *lcpIt > startIndices.back().first) {
-      startIndices.push_back(std::pair<unsigned, unsigned>(*lcpIt, i - 1));
+    if (startIndices.empty() || lcp[i] > startIndices.back().first) {
+      startIndices.push_back(std::pair<unsigned, unsigned>(lcp[i], i - 1));
     }
   }
 
   // NOTE: python also allows sorting by length
   std::sort(substrings.begin(), substrings.end(), 
-    [](const substring_t a, const substring_t b) {return a.subrSaving() < b.subrSaving();});
+    [](const substring_t a, const substring_t b) {return a.subrSaving() > b.subrSaving();});
 
-  std::cout << substrings.size();
+  std::cout << substrings.size() << std::endl;
   return substrings;
 }
+// end charstring_pool_t ========= 
+
 
 
 charstring_pool_t charstringPoolFactory(std::istream &instream) {

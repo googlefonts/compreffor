@@ -51,10 +51,13 @@ class substring_t {
 public:
   substring_t (charstring_pool_t &_chPool, unsigned _len, unsigned _start, unsigned _freq);
   substring_t (const substring_t &other);
+  const_tokiter_t begin() const;
+  const_tokiter_t end() const;
   int cost();
   int subrSaving();
   int cost() const;
   int subrSaving() const;
+  std::string toString();
   bool operator==(const substring_t &other) const;
   bool operator!=(const substring_t &other) const;
   substring_t& operator=(const substring_t &other);
