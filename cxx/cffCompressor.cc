@@ -1,5 +1,7 @@
 #include "cffCompressor.h"
 
+const unsigned int_size = sizeof(int_type);
+
 // token_t ============
 token_t::token_t (int_type value_) : value(value_) {}
 token_t::token_t (const token_t &other) : value(other.value) {}
@@ -44,26 +46,25 @@ std::ostream& operator<<(std::ostream &stream, const token_t &tok) {
 
 
 // substring_t =========
-substring_t::substring_t (charstring_pool_t &_chPool, unsigned _len, unsigned _start, unsigned _freq)
-  : chPool(_chPool), start(_start), len(_len), freq(_freq), _cost(-1) {}
+substring_t::substring_t (unsigned _len, unsigned _start, unsigned _freq)
+  : start(_start), len(_len), freq(_freq), _cost(0) {}
 
 substring_t::substring_t (const substring_t &other)
-  : chPool(other.chPool), start(other.start), len(other.len), freq(other.freq),
-    _cost(-1) {}
+  : start(other.start), len(other.len), freq(other.freq), _cost(0) {}
 
-const_tokiter_t substring_t::begin() const {
+const_tokiter_t substring_t::begin(const charstring_pool_t &chPool) const {
   return chPool.getTokenIter(start);
 }
 
-const_tokiter_t substring_t::end() const {
-  return begin() + len;
+const_tokiter_t substring_t::end(const charstring_pool_t &chPool) const {
+  return begin(chPool) + len;
 }
 
-std::string substring_t::toString() {
+std::string substring_t::toString(const charstring_pool_t &chPool) {
   std::ostringstream os;
   os << "[";
-  auto it = begin();
-  for (; it != end() - 1; ++it) {
+  auto it = begin(chPool);
+  for (; it != end(chPool) - 1; ++it) {
     os << *it << ", ";
   }
   ++it;
@@ -71,39 +72,41 @@ std::string substring_t::toString() {
   return os.str();
 }
 
-int substring_t::cost() {
-  if (_cost != -1) {
+uint16_t substring_t::cost(const charstring_pool_t &chPool) {
+  if (_cost != 0) {
     return _cost;
   }
   else {
     // call other cost
-    int sum = ((const substring_t) *this).cost();
+    int sum = doCost(chPool);
     _cost = sum;
     return _cost;
   }
 }
 
-int substring_t::cost() const {
-  if (_cost != -1) {
+uint16_t substring_t::cost(const charstring_pool_t &chPool) const {
+  if (_cost != 0) {
     return _cost;
   }
   else {
-    int sum = 0;
-    const_tokiter_t it = chPool.getTokenIter(start);
-    const_tokiter_t end = it + len;
-    for (; it != end; ++it) {
-      sum += (*it).size();
-    }
-    return sum;
+    return doCost(chPool);
   }
 }
 
-int substring_t::subrSaving() { // XXX needs use_usages and true_cost, (and call_cost and subr_overhead params)
-  return doSubrSaving(cost());
+uint16_t substring_t::doCost(const charstring_pool_t &chPool) const {
+  int sum = 0;
+  for (auto it = begin(chPool); it != end(chPool); ++it) {
+    sum += it->size();
+  }
+  return sum;
 }
 
-int substring_t::subrSaving() const { // XXX needs use_usages and true_cost, (and call_cost and subr_overhead params)
-  return doSubrSaving(cost());
+int substring_t::subrSaving(const charstring_pool_t &chPool) { // XXX needs use_usages and true_cost, (and call_cost and subr_overhead params)
+  return doSubrSaving(cost(chPool));
+}
+
+int substring_t::subrSaving(const charstring_pool_t &chPool) const { // XXX needs use_usages and true_cost, (and call_cost and subr_overhead params)
+  return doSubrSaving(cost(chPool));
 }
 
 int substring_t::doSubrSaving(int subCost) const {
@@ -119,23 +122,24 @@ int substring_t::doSubrSaving(int subCost) const {
 
 substring_t& substring_t::operator=(const substring_t &other) {
   if (*this != other) {
-    assert(&chPool == &other.chPool);
     start = other.start;
     len = other.len;
     freq = other.freq;
     _cost = other._cost;
-    left = other.left;
-    right = other.right;
   }
   return *this;
 }
 
 bool substring_t::operator==(const substring_t &other) const {
-  return &chPool == &other.chPool && start == other.start && len == other.len;
+  return start == other.start && len == other.len;
 }
 
 bool substring_t::operator!=(const substring_t &other) const {
   return !(*this == other);
+}
+
+inline uint32_t substring_t::length() {
+  return len;
 }
 // end substring_t ============
 
@@ -172,6 +176,7 @@ charstring_t charstring_pool_t::getCharstring(unsigned idx) {
 void charstring_pool_t::addRawCharstring(char* data, unsigned len) {
   assert(!finalized);
 
+  uint32_t numHints = 0;
   unsigned nToks = 0;
   for (unsigned csPos = 0; csPos < len; ++csPos) {
     unsigned char first = data[csPos];
@@ -298,7 +303,7 @@ struct charstring_pool_t::suffixSortFunctor {
   const std::vector<unsigned> &rev;
   suffixSortFunctor(const std::vector<token_t> &_pool,
                     const std::vector<unsigned> &_offset,
-                    const std::vector<unsigned> &_rev) 
+                    const std::vector<unsigned> &_rev)
                   : pool(_pool), offset(_offset), rev(_rev) {}
   bool operator()(unsigned a, unsigned b) {
     int aLen = offset[rev[a] + 1] - a;
@@ -336,8 +341,8 @@ std::vector<unsigned> charstring_pool_t::generateLCP(std::vector<unsigned> &suff
   assert(finalized);
   assert(suffixes.size() == pool.size());
 
-  std::vector<unsigned> lcp(pool.size(), 0);
-  unsigned rank[pool.size()];
+  std::vector<uint32_t> lcp(pool.size(), 0);
+  std::vector<uint32_t> rank(pool.size(), 0);
 
   for (unsigned i = 0; i < pool.size(); ++i) {
     unsigned idx = suffixes[i];
@@ -387,19 +392,9 @@ std::vector<substring_t> charstring_pool_t::generateSubstrings
       unsigned freq = i - startIdx;
       assert(freq >= 2); // NOTE: python allows different min_freq
 
-      uint32_t curLen;
-      if (startIndices.empty())
-        curLen = 0;
-      else
-        curLen = startIndices.back().first + 1;
-
-      for (; curLen <= len; ++curLen) {
-        substring_t subr(*this, curLen, suffixes[startIdx], freq);
-        if (curLen > 1) {
-          subr.setLeft(&substrings.back());
-        // if (subr.subrSaving() > 0) // NOTE: python allows turning this check off
-          substrings.push_back(subr);
-        }
+      substring_t subr(len, suffixes[startIdx], freq);
+      if (len > 1 && subr.subrSaving(*this) > 0) { // NOTE: python allows turning this check off
+        substrings.push_back(subr);
       }
     }
 
@@ -409,21 +404,20 @@ std::vector<substring_t> charstring_pool_t::generateSubstrings
   }
 
   // NOTE: python also allows sorting by length
-  std::sort(substrings.begin(), substrings.end(), 
-    [](const substring_t a, const substring_t b) {return a.subrSaving() > b.subrSaving();});
+  std::sort(substrings.begin(), substrings.end(),
+    [this](const substring_t a, const substring_t b) {return a.subrSaving(*this) > b.subrSaving(*this);});
 
-  std::cout << substrings.size() << std::endl;
   return substrings;
 }
 // end charstring_pool_t ========= 
 
 
 
-charstring_pool_t charstringPoolFactory(std::istream &instream) {
+charstring_pool_t CharstringPoolFactory(std::istream &instream) {
   uint16_t count;
   unsigned char countBuffer[2];
   instream.read((char*) countBuffer, 2);
-  count = (countBuffer[0] << 8) | (countBuffer[1]); // XXX
+  count = (countBuffer[0] << 8) | (countBuffer[1]);
   std::cout << "count: " << count << std::endl;
 
   unsigned char offSize;
@@ -477,7 +471,7 @@ charstring_pool_t charstringPoolFactory(std::istream &instream) {
 
 
 int main(int argc, const char* argv[]) {
-  charstring_pool_t csPool = charstringPoolFactory(std::cin);
+  charstring_pool_t csPool = CharstringPoolFactory(std::cin);
 
   csPool.getSubstrings();
   std::cout << "finished getSubstrings()" << std::endl;

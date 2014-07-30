@@ -2,7 +2,7 @@ O ?= 2
 
 CXXFLAGS = -std=c++0x -W -Wall -Wno-unused -Wno-unused-parameter -g
 CXXFLAGS += -DDEBUG -g
-CC=g++
+CC = g++
 DEPS = cffCompressor.h
 
 all: cffCompressor

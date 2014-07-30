@@ -20,7 +20,6 @@ class substring_t;
 class charstring_pool_t;
 
 typedef uint32_t int_type;
-const unsigned int_size = sizeof(int_type);
 typedef std::map<std::string, unsigned> tokmap_t;
 typedef std::vector<token_t>::iterator tokiter_t;
 typedef std::vector<token_t>::const_iterator const_tokiter_t;
@@ -49,31 +48,28 @@ typedef struct charstring_t {
 
 class substring_t {
 public:
-  substring_t (charstring_pool_t &_chPool, unsigned _len, unsigned _start, unsigned _freq);
+  substring_t (unsigned _len, unsigned _start, unsigned _freq);
   substring_t (const substring_t &other);
-  const_tokiter_t begin() const;
-  const_tokiter_t end() const;
-  int cost();
-  int subrSaving();
-  int cost() const;
-  int subrSaving() const;
-  std::string toString();
+  const_tokiter_t begin(const charstring_pool_t &chPool) const;
+  const_tokiter_t end(const charstring_pool_t &chPool) const;
+  uint16_t cost(const charstring_pool_t &chPool);
+  int subrSaving(const charstring_pool_t &chPool);
+  uint16_t cost(const charstring_pool_t &chPool) const;
+  int subrSaving(const charstring_pool_t &chPool) const;
+  std::string toString(const charstring_pool_t &chPool);
   bool operator==(const substring_t &other) const;
   bool operator!=(const substring_t &other) const;
   substring_t& operator=(const substring_t &other);
-  void setLeft(substring_t *subr) { left = subr; }
-  void setRight(substring_t *subr) { left = subr; }
+  inline uint32_t length();
 
 private:
-  const charstring_pool_t &chPool;
   uint32_t start;
   uint32_t len;
   uint32_t freq;
-  short _cost;
-  substring_t *left;
-  substring_t *right;
+  uint16_t _cost;
 
   int doSubrSaving(int subCost) const;
+  uint16_t doCost(const charstring_pool_t &chPool) const;
 };
 
 class charstring_pool_t {
@@ -107,5 +103,7 @@ private:
                                               std::vector<unsigned> &lcp);
 
 };
+
+charstring_pool_t CharstringPoolFactory(std::istream &instream);
 
 #endif
