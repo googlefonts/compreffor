@@ -12,9 +12,9 @@ def write_data(td, f):
     """Writes CharStrings and FDSelect from the TopDict td into the file f."""
     td.CharStrings.charStringsIndex.getCompiler(td.strings, None).toFile(f)
     try:
-        fdselect = struct.pack('b', len(td.FDArray)) + array.array('B', list(td.FDSelect)).tostring()
+        fdselect = struct.pack('B', len(td.FDArray)) + array.array('B', list(td.FDSelect)).tostring()
     except AttributeError:
-        fdselect = struct.pack('b', 1)
+        fdselect = struct.pack('B', 1)
     f.write(fdselect)
 
 if __name__ == '__main__':

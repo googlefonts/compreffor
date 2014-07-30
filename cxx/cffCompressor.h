@@ -146,7 +146,6 @@ private:
   std::vector<unsigned> generateLCP(std::vector<unsigned> &suffixes);
   std::vector<substring_t> generateSubstrings(std::vector<unsigned> &suffixes,
                                               std::vector<unsigned> &lcp);
-
 };
 
 charstring_pool_t CharstringPoolFactory(std::istream &instream);

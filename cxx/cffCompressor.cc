@@ -3,7 +3,7 @@
 const unsigned int_size = sizeof(int_type);
 const float K = 0.1;
 const float ALPHA = 0.1;
-const unsigned NUM_THREADS = 12;
+const unsigned NUM_THREADS = 100;
 
 // token_t ============
 token_t::token_t (int_type value_) : value(value_) {}
@@ -209,8 +209,8 @@ void charstring_pool_t::subroutinize() {
     substrMap[light_substring_t(substr.getStart(), substr.size())] = &substr;
   }
 
-  unsigned substrChunkSize = substrings.size() / NUM_THREADS;
-  unsigned glyphChunkSize = count / NUM_THREADS;;
+  unsigned substringChunkSize = substrings.size() / NUM_THREADS + 1;
+  unsigned glyphChunkSize = count / NUM_THREADS + 1;
   std::vector<encoding_list> substrEncodings;
   std::vector<encoding_list> glyphEncodings;
   std::vector<std::future<std::vector<encoding_list>>> futures;
@@ -222,34 +222,44 @@ void charstring_pool_t::subroutinize() {
     }
 
     // minimize cost of substrings
-    substrEncodings.clear();
     futures.clear();
+    substrEncodings.clear();
     for (unsigned i = 0; i < NUM_THREADS; ++i) {
-      unsigned stop = (i + 1) * substrChunkSize;
-      if (i == NUM_THREADS - 1)
+      unsigned stop = (i + 1) * substringChunkSize;
+      if (stop > substrings.size())
         stop = substrings.size();
 
-      futures.push_back(std::async(std::launch::async, optimizeSubstrings, std::ref(substrMap), std::ref(*this), i * substrChunkSize, stop, std::ref(substrings)));
+      futures.push_back(std::async(std::launch::async,
+                            optimizeSubstrings,
+                            std::ref(substrMap),
+                            std::ref(*this),
+                            i * substringChunkSize,
+                            stop,
+                            std::ref(substrings)));
     }
     for (auto threadIt = futures.begin(); threadIt != futures.end(); ++threadIt) {
       std::vector<encoding_list> res = threadIt->get();
       substrEncodings.insert(substrEncodings.end(), res.begin(), res.end());
     }
-    // TODO update adjCost of substrings
 
     // minimize cost of glyphstrings
-    glyphEncodings.clear();
     futures.clear();
+    glyphEncodings.clear();
     for (unsigned i = 0; i < NUM_THREADS; ++i) {
       unsigned stop = (i + 1) * glyphChunkSize;
-      if (i == NUM_THREADS - 1)
+      if (stop > count)
         stop = count;
 
-      futures.push_back(std::async(std::launch::async, optimizeSubstrings, std::ref(substrMap), std::ref(*this), i * glyphChunkSize, stop, std::ref(substrings)));
+      futures.push_back(std::async(std::launch::async,
+                            optimizeGlyphstrings,
+                            std::ref(substrMap),
+                            std::ref(*this),
+                            i * glyphChunkSize,
+                            stop));
     }
     for (auto threadIt = futures.begin(); threadIt != futures.end(); ++threadIt) {
       std::vector<encoding_list> res = threadIt->get();
-      substrEncodings.insert(substrEncodings.end(), res.begin(), res.end());
+      glyphEncodings.insert(glyphEncodings.end(), res.begin(), res.end());
     }
 
     // update usages
@@ -285,6 +295,7 @@ std::vector<encoding_list> optimizeSubstrings(std::map<light_substring_t, substr
     result.push_back(ans.first);
     it->setPrice(ans.second);
   }
+
   return result;
 }
 
@@ -300,8 +311,8 @@ std::vector<encoding_list> optimizeGlyphstrings(std::map<light_substring_t, subs
   return result;
 }
 
-std::pair<encoding_list, uint16_t> optimizeCharstring
-      (const_tokiter_t begin, const_tokiter_t end,
+std::pair<encoding_list, uint16_t> optimizeCharstring(
+      const_tokiter_t begin, const_tokiter_t end,
       std::map<light_substring_t, substring_t*> &substrMap) {
   uint16_t lenCharstring = end - begin;
   std::vector<uint16_t> results(lenCharstring + 1);
@@ -472,7 +483,8 @@ void charstring_pool_t::setFDSelect(unsigned char* rawFD) {
   }
   else {
     fdSelectTrivial = false;
-    std::vector<unsigned char> fdSelect(rawFD, rawFD + count);
+    for (unsigned i = 0; i < count; ++i)
+      fdSelect.push_back(rawFD[i]);
   }
 }
 
@@ -688,19 +700,18 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
   std::cout << "loaded " << offset[count] << " bytes of charstrings" << std::endl;
 
   unsigned char fdCount;
-  unsigned char* fdselect;
   instream.read((char *) &fdCount, 1);
   if (fdCount > 1) {
-    unsigned char buf[count];
+    unsigned char* buf = (unsigned char*) malloc(count);
     instream.read((char*) buf, count);
-    fdselect = buf;
+    csPool.setFDSelect(buf);
+    free(buf);
     std::cout << "loaded FDSelect" << std::endl;
   }
   else {
-    fdselect = NULL;
+    csPool.setFDSelect(NULL);
     std::cout << "no FDSelect loaded" << std::endl;
   }
-  csPool.setFDSelect(fdselect);
 
   csPool.finalize();
 
