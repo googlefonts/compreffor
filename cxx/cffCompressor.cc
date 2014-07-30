@@ -1,6 +1,9 @@
 #include "cffCompressor.h"
 
 const unsigned int_size = sizeof(int_type);
+const float K = 0.1;
+const float ALPHA = 0.1;
+const unsigned NUM_THREADS = 12;
 
 // token_t ============
 token_t::token_t (int_type value_) : value(value_) {}
@@ -42,10 +45,21 @@ bool token_t::operator==(const token_t &other) const {
 std::ostream& operator<<(std::ostream &stream, const token_t &tok) {
   return stream << tok.toString();
 }
-// end token_t =========
+// end token_t ===============
 
 
-// substring_t =========
+// light_substring_t =========
+bool light_substring_t::operator<(const light_substring_t &other) const {
+  // ordering is by start pos, then len
+  if (start == other.start)
+    return len < other.len;
+  else
+    return start < other.start;
+}
+// end light_substring_t =====
+
+
+// substring_t ===============
 substring_t::substring_t (unsigned _len, unsigned _start, unsigned _freq)
   : start(_start), len(_len), freq(_freq), _cost(0) {}
 
@@ -130,6 +144,14 @@ substring_t& substring_t::operator=(const substring_t &other) {
   return *this;
 }
 
+bool substring_t::operator<(const substring_t &other) const {
+  // ordering is by start pos, then len
+  if (start == other.start)
+    return len < other.len;
+  else
+    return start < other.start;
+}
+
 bool substring_t::operator==(const substring_t &other) const {
   return start == other.start && len == other.len;
 }
@@ -138,8 +160,33 @@ bool substring_t::operator!=(const substring_t &other) const {
   return !(*this == other);
 }
 
-inline uint32_t substring_t::length() {
+inline uint32_t substring_t::size() {
   return len;
+}
+
+inline uint32_t substring_t::getStart() {
+  return start;
+}
+
+void substring_t::updatePrice() {
+  float margCost = (float) adjCost / (freq + K);
+  price = margCost * ALPHA + price * (1 - ALPHA);
+}
+
+inline void substring_t::resetFreq() {
+  freq = 0;
+}
+
+inline void substring_t::incrementFreq() {
+  ++freq;
+}
+
+inline uint16_t substring_t::getPrice() const {
+  return price;
+}
+
+inline void substring_t::setPrice(uint16_t newPrice) {
+  price = newPrice;
 }
 // end substring_t ============
 
@@ -148,18 +195,183 @@ inline uint32_t substring_t::length() {
 charstring_pool_t::charstring_pool_t (unsigned nCharstrings)
   : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
     finalized(false) {
-    pool.reserve(nCharstrings);
-    offset.reserve(nCharstrings + 1);
-    offset.push_back(0);
+  pool.reserve(nCharstrings);
+  offset.reserve(nCharstrings + 1);
+  offset.push_back(0);
+}
+
+void charstring_pool_t::subroutinize() {
+  std::vector<substring_t> substrings = getSubstrings();
+  std::map<light_substring_t, substring_t*> substrMap;
+  
+  // set up map with initial values
+  for (substring_t &substr : substrings) {
+    substrMap[light_substring_t(substr.getStart(), substr.size())] = &substr;
   }
 
-void charstring_pool_t::getSubstrings() {
+  unsigned substrChunkSize = substrings.size() / NUM_THREADS;
+  unsigned glyphChunkSize = count / NUM_THREADS;;
+  std::vector<encoding_list> substrEncodings;
+  std::vector<encoding_list> glyphEncodings;
+  std::vector<std::future<std::vector<encoding_list>>> futures;
+
+  for (int runCount = 0; runCount < 4; ++runCount) {
+    // update market
+    for (substring_t &substr : substrings) {
+      substr.updatePrice();
+    }
+
+    // minimize cost of substrings
+    substrEncodings.clear();
+    futures.clear();
+    for (unsigned i = 0; i < NUM_THREADS; ++i) {
+      unsigned stop = (i + 1) * substrChunkSize;
+      if (i == NUM_THREADS - 1)
+        stop = substrings.size();
+
+      futures.push_back(std::async(std::launch::async, optimizeSubstrings, std::ref(substrMap), std::ref(*this), i * substrChunkSize, stop, std::ref(substrings)));
+    }
+    for (auto threadIt = futures.begin(); threadIt != futures.end(); ++threadIt) {
+      std::vector<encoding_list> res = threadIt->get();
+      substrEncodings.insert(substrEncodings.end(), res.begin(), res.end());
+    }
+    // TODO update adjCost of substrings
+
+    // minimize cost of glyphstrings
+    glyphEncodings.clear();
+    futures.clear();
+    for (unsigned i = 0; i < NUM_THREADS; ++i) {
+      unsigned stop = (i + 1) * glyphChunkSize;
+      if (i == NUM_THREADS - 1)
+        stop = count;
+
+      futures.push_back(std::async(std::launch::async, optimizeSubstrings, std::ref(substrMap), std::ref(*this), i * glyphChunkSize, stop, std::ref(substrings)));
+    }
+    for (auto threadIt = futures.begin(); threadIt != futures.end(); ++threadIt) {
+      std::vector<encoding_list> res = threadIt->get();
+      substrEncodings.insert(substrEncodings.end(), res.begin(), res.end());
+    }
+
+    // update usages
+    for (substring_t &substr : substrings) {
+      substr.resetFreq();
+    }
+
+    for (encoding_list &encList : substrEncodings) {
+      for (encoding_item &enc : encList) {
+        enc.substr->incrementFreq();
+      }
+    }
+    for (encoding_list &encList : substrEncodings) {
+      for (encoding_item &enc : encList) {
+        enc.substr->incrementFreq();
+      }
+    }
+
+    std::cout << "Round " << runCount + 1 << " Done!" << std::endl;
+
+    // TODO: cutdown
+  }
+}
+
+std::vector<encoding_list> optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
+                        charstring_pool_t &csPool,
+                        unsigned start,
+                        unsigned stop,
+                        std::vector<substring_t> &substrings) {
+  std::vector<encoding_list> result;
+  for (auto it = substrings.begin() + start; it != substrings.begin() + stop; ++it) {
+    auto ans = optimizeCharstring(it->begin(csPool), it->end(csPool), substrMap);
+    result.push_back(ans.first);
+    it->setPrice(ans.second);
+  }
+  return result;
+}
+
+std::vector<encoding_list> optimizeGlyphstrings(std::map<light_substring_t, substring_t*> &substrMap,
+                          charstring_pool_t &csPool,
+                          unsigned start,
+                          unsigned stop) {
+  std::vector<encoding_list> result;
+  for (unsigned i = start; i < stop; ++i) {
+    charstring_t cs = csPool.getCharstring(i);
+    result.push_back(optimizeCharstring(cs.begin, cs.end, substrMap).first);
+  }
+  return result;
+}
+
+std::pair<encoding_list, uint16_t> optimizeCharstring
+      (const_tokiter_t begin, const_tokiter_t end,
+      std::map<light_substring_t, substring_t*> &substrMap) {
+  uint16_t lenCharstring = end - begin;
+  std::vector<uint16_t> results(lenCharstring + 1);
+  std::vector<int> nextEncIdx(lenCharstring, -1);
+  std::vector<substring_t*> nextEncSubstr(lenCharstring, NULL);
+
+  for (int i = lenCharstring - 1; i >= 0; --i) {
+    int minOption = -1;
+    int minEncIdx = lenCharstring;
+    substring_t* minEncSubstr = NULL;
+    int curCost = 0;
+
+    const_tokiter_t curToken = begin + i;
+    for (int j = i + 1; j <= lenCharstring; ++j, ++curToken) {
+      curCost += curToken->size();
+
+      auto entryIt = substrMap.find(light_substring_t(i, j - i));
+      substring_t* substr;
+      uint16_t option;
+      if (entryIt != substrMap.end()) {
+        // TODO check to not subroutinize with yourself
+        substr = entryIt->second;
+        option = substr->getPrice() + results[j];
+      }
+      else {
+        substr = NULL;
+        option = curCost + results[j];
+      }
+
+      if (option < minOption || minOption == -1) {
+        minOption = option;
+        minEncIdx = j;
+        minEncSubstr = NULL;
+      }
+    }
+
+    results[i] = minOption;
+    nextEncIdx[i] = minEncIdx;
+    nextEncSubstr[i] = minEncSubstr;
+  }
+
+  uint16_t marketCost = results[0];
+  encoding_list ans;
+  int curEncIdx = 0;
+
+  while (curEncIdx < lenCharstring) {
+    uint16_t lastIdx = curEncIdx;
+    substring_t* curEncSubstr = nextEncSubstr[curEncIdx];
+    curEncIdx = nextEncIdx[curEncIdx];
+
+    if (curEncSubstr != NULL) {
+      encoding_item item;
+      item.pos = lastIdx;
+      item.substr = curEncSubstr;
+      ans.push_back(item);
+    }
+  }
+
+  return std::pair<encoding_list, uint16_t>(ans, marketCost);
+}
+
+std::vector<substring_t> charstring_pool_t::getSubstrings() {
   if (!finalized)
     finalize();
 
   std::vector<unsigned> suffixes = generateSuffixes();
   std::vector<unsigned> lcp = generateLCP(suffixes);
   std::vector<substring_t> substrings = generateSubstrings(suffixes, lcp);
+
+  return substrings;
 }
 
 charstring_t charstring_pool_t::getCharstring(unsigned idx) {
@@ -177,43 +389,69 @@ void charstring_pool_t::addRawCharstring(char* data, unsigned len) {
   assert(!finalized);
 
   uint32_t numHints = 0;
+  uint32_t stackSize = 0;
+
   unsigned nToks = 0;
   for (unsigned csPos = 0; csPos < len; ++csPos) {
     unsigned char first = data[csPos];
     unsigned tokSize;
-    if (first < 12)
-      // operators
-      tokSize = 1;
-    else if (first < 13)
-      // escape + addl operator code
-      tokSize = 2;
-    else if (first < 19)
-      // operators
-      tokSize = 1;
-    else if (first < 21)
-      // hintmask/cntrmask
-      assert(false); // TODO not implemented
-    else if (first < 28)
-      // operators
-      tokSize = 1;
-    else if (first < 29)
-      // 16-bit signed
-      tokSize = 3;
-    else if (first < 32)
-      // operators
-      tokSize = 1;
-    else if (first < 247)
-      // -107 to 107
-      tokSize = 1;
-    else if (first < 251)
-      // +108 to +1131
-      tokSize = 2;
-    else if (first < 255)
-      // -108 to -1131
-      tokSize = 2;
-    else
-      // 4-byte floating point
-      tokSize = 5;
+    if (first < 28 || (first >= 29 && first < 32)) {
+      if (first < 12){
+        // operators 0-11
+        tokSize = 1;
+      }
+      else if (first == 12) {
+        // escape (12) + addl operator code
+        tokSize = 2;
+      }
+      else if (first < 19) {
+        // operators 13-18
+        if (first == 18 || first == 23) {
+          // hstemhm/vstemhm
+          numHints += stackSize / 2;
+        }
+
+        tokSize = 1;
+      }
+      else if (first < 21) {
+        // hintmask/cntrmask (19/20)
+        tokSize = 1 + numHints / 4 + (numHints % 4 != 0) ? 1 : 0;
+      }
+      else if (first < 28) {
+        // operators 21-27
+        tokSize = 1;
+      }
+      else {
+        // operators 29-31
+        tokSize = 1;
+      }
+
+      stackSize = 0;
+    }
+    else {
+      stackSize += 1;
+
+      if (first < 29) {
+        // 16-bit signed
+        tokSize = 3;
+      }
+      else if (first < 247) {
+        // -107 to 107
+        tokSize = 1;
+      }
+      else if (first < 251) {
+        // +108 to +1131
+        tokSize = 2;
+      }
+      else if (first < 255) {
+        // -108 to -1131
+        tokSize = 2;
+      }
+      else {
+        // 4-byte floating point
+        tokSize = 5;
+      }
+    }
 
     unsigned char rawTok[tokSize];
     rawTok[0] = first;
@@ -473,8 +711,8 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
 int main(int argc, const char* argv[]) {
   charstring_pool_t csPool = CharstringPoolFactory(std::cin);
 
-  csPool.getSubstrings();
-  std::cout << "finished getSubstrings()" << std::endl;
+  csPool.subroutinize();
+  std::cout << "finished subroutinize()" << std::endl;
 
   return 0;
 }

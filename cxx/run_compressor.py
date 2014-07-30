@@ -5,6 +5,7 @@ import array
 import struct
 import subprocess
 import sys
+import os
 from fontTools.ttLib import TTFont
 
 def write_data(td, f):
@@ -21,6 +22,6 @@ if __name__ == '__main__':
     td = f['CFF '].cff.topDictIndex[0]
     print("PYTHON>>> # of charstrings == %d" % len(td.CharStrings))
 
-    p = subprocess.Popen(['./cffCompressor'], stdin=subprocess.PIPE)
+    p = subprocess.Popen([os.path.join(os.path.dirname(__file__), 'cffCompressor')], stdin=subprocess.PIPE)
     write_data(td, p.stdin)
     p.communicate()
