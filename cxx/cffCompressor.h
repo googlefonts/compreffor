@@ -80,8 +80,11 @@ public:
   inline uint32_t size();
   inline uint32_t getStart();
   void updatePrice();
+  uint32_t getFreq();
   void resetFreq();
   void incrementFreq();
+  void increaseFreq(unsigned amt);
+  void decrementFreq();
   uint16_t getPrice() const;
   void setPrice(uint16_t newPrice);
 
@@ -119,8 +122,8 @@ std::pair<encoding_list, uint16_t> optimizeCharstring(const_tokiter_t begin, con
 class charstring_pool_t {
 public:
   charstring_pool_t (unsigned nCharstrings);
-  std::vector<substring_t> getSubstrings();
   void subroutinize();
+  void compress();
   charstring_t getCharstring(unsigned idx);
   void addRawCharstring(char* data, unsigned len);
   void setFDSelect(unsigned char* rawFD);
@@ -141,6 +144,7 @@ private:
   inline unsigned quarkFor(unsigned char* data, unsigned len);
   void addRawToken(unsigned char* data, unsigned len);
   int_type generateValue(unsigned char* data, unsigned len);
+  std::vector<substring_t> getSubstrings();
   std::vector<unsigned> generateSuffixes();
   struct suffixSortFunctor;
   std::vector<unsigned> generateLCP(std::vector<unsigned> &suffixes);

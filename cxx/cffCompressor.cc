@@ -4,6 +4,7 @@ const unsigned int_size = sizeof(int_type);
 const float K = 0.1;
 const float ALPHA = 0.1;
 const unsigned NUM_THREADS = 100;
+const unsigned NUM_ROUNDS = 4;
 
 // token_t ============
 token_t::token_t (int_type value_) : value(value_) {}
@@ -173,12 +174,25 @@ void substring_t::updatePrice() {
   price = margCost * ALPHA + price * (1 - ALPHA);
 }
 
+inline uint32_t substring_t::getFreq() {
+  return freq;
+}
+
 inline void substring_t::resetFreq() {
   freq = 0;
 }
 
 inline void substring_t::incrementFreq() {
   ++freq;
+}
+
+inline void substring_t::increaseFreq(unsigned amt) {
+  freq += amt;
+}
+
+inline void substring_t::decrementFreq() {
+  assert(freq != 0);
+  --freq;
 }
 
 inline uint16_t substring_t::getPrice() const {
@@ -200,7 +214,11 @@ charstring_pool_t::charstring_pool_t (unsigned nCharstrings)
   offset.push_back(0);
 }
 
-void charstring_pool_t::subroutinize() {
+void charstring_pool_t::compress() {
+
+}
+
+void charstring_pool_t::subroutinize() { // needs: testMode
   std::vector<substring_t> substrings = getSubstrings();
   std::map<light_substring_t, substring_t*> substrMap;
   
@@ -215,7 +233,7 @@ void charstring_pool_t::subroutinize() {
   std::vector<encoding_list> glyphEncodings;
   std::vector<std::future<std::vector<encoding_list>>> futures;
 
-  for (int runCount = 0; runCount < 4; ++runCount) {
+  for (unsigned runCount = 0; runCount < 4; ++runCount) {
     // update market
     for (substring_t &substr : substrings) {
       substr.updatePrice();
@@ -225,6 +243,9 @@ void charstring_pool_t::subroutinize() {
     futures.clear();
     substrEncodings.clear();
     for (unsigned i = 0; i < NUM_THREADS; ++i) {
+      if (i * substringChunkSize >= substrings.size())
+        break;
+
       unsigned stop = (i + 1) * substringChunkSize;
       if (stop > substrings.size())
         stop = substrings.size();
@@ -246,6 +267,9 @@ void charstring_pool_t::subroutinize() {
     futures.clear();
     glyphEncodings.clear();
     for (unsigned i = 0; i < NUM_THREADS; ++i) {
+      if (i * glyphChunkSize >= count)
+        break;
+
       unsigned stop = (i + 1) * glyphChunkSize;
       if (stop > count)
         stop = count;
@@ -280,7 +304,22 @@ void charstring_pool_t::subroutinize() {
 
     std::cout << "Round " << runCount + 1 << " Done!" << std::endl;
 
-    // TODO: cutdown
+    // TODO cutdown
+    if (runCount <= NUM_ROUNDS - 2) { // python checks for testMode
+      // if (runCount < NUM_ROUNDS - 2) { // python does trueCost for == NUM_ROUNDS - 2
+        auto substrIt = substrings.begin();
+        auto encIter = substrEncodings.begin();
+        for (; substrIt != substrings.end(); ++substrIt, ++encIter) {
+          if (substrIt->subrSaving(*this) <= 0) {
+            substrings.erase(substrIt);
+            substrMap.erase(light_substring_t(substrIt->getStart(), substrIt->size()));
+            for (encoding_item& enc_item : *encIter) {
+              enc_item.substr->increaseFreq(substrIt->getFreq());
+            }
+          }
+        }
+      // }
+    }
   }
 }
 
