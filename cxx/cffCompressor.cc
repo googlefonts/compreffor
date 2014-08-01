@@ -51,11 +51,31 @@ std::ostream& operator<<(std::ostream &stream, const token_t &tok) {
 
 // light_substring_t =========
 bool light_substring_t::operator<(const light_substring_t &other) const {
-  // ordering is by start pos, then len
-  if (start == other.start)
-    return len < other.len;
-  else
-    return start < other.start;
+  // compare actual tokens
+  // TODO optimization if they are literally pointing to the same thing
+
+  unsigned thisLen = end - begin;
+  unsigned otherLen = other.end - other.begin;
+
+  if (thisLen < otherLen) {
+    auto p = std::mismatch(begin, end, other.begin);
+    if (p.first == end)
+      return true;
+    else
+      return *p.first < *p.second;
+  }
+  else {
+    auto p = std::mismatch(other.begin, other.end, begin);
+    if (p.first == other.end)
+      return false;
+    else
+      return *p.second < *p.first;
+  }
+}
+
+light_substring_t::light_substring_t (uint32_t start, uint32_t len, charstring_pool_t* pool) {
+  begin = pool->get(0) + start;
+  end = begin + len;
 }
 // end light_substring_t =====
 
@@ -68,7 +88,7 @@ substring_t::substring_t (const substring_t &other)
   : start(other.start), len(other.len), freq(other.freq), _cost(0) {}
 
 const_tokiter_t substring_t::begin(const charstring_pool_t &chPool) const {
-  return chPool.getTokenIter(start);
+  return chPool.get(start);
 }
 
 const_tokiter_t substring_t::end(const charstring_pool_t &chPool) const {
@@ -146,6 +166,7 @@ substring_t& substring_t::operator=(const substring_t &other) {
 }
 
 bool substring_t::operator<(const substring_t &other) const {
+  // std::cout << "warning: substring_t::operator< called" << std::endl;
   // ordering is by start pos, then len
   if (start == other.start)
     return len < other.len;
@@ -154,10 +175,12 @@ bool substring_t::operator<(const substring_t &other) const {
 }
 
 bool substring_t::operator==(const substring_t &other) const {
+  // std::cout << "warning: substring_t::operator== called" << std::endl;
   return start == other.start && len == other.len;
 }
 
 bool substring_t::operator!=(const substring_t &other) const {
+  // std::cout << "warning: substring_t::operator!= called" << std::endl;
   return !(*this == other);
 }
 
@@ -169,12 +192,21 @@ inline uint32_t substring_t::getStart() {
   return start;
 }
 
+inline void substring_t::setAdjCost(float val) {
+  assert(val > 0);
+  adjCost = val;
+}
+
+inline void substring_t::syncPrice() {
+  price = adjCost;
+}
+
 void substring_t::updatePrice() {
   float margCost = (float) adjCost / (freq + K);
   price = margCost * ALPHA + price * (1 - ALPHA);
 }
 
-inline uint32_t substring_t::getFreq() {
+inline uint32_t substring_t::getFreq() const {
   return freq;
 }
 
@@ -195,11 +227,11 @@ inline void substring_t::decrementFreq() {
   --freq;
 }
 
-inline uint16_t substring_t::getPrice() const {
+inline float substring_t::getPrice() const {
   return price;
 }
 
-inline void substring_t::setPrice(uint16_t newPrice) {
+inline void substring_t::setPrice(float newPrice) {
   price = newPrice;
 }
 // end substring_t ============
@@ -214,17 +246,15 @@ charstring_pool_t::charstring_pool_t (unsigned nCharstrings)
   offset.push_back(0);
 }
 
-void charstring_pool_t::compress() {
-
-}
-
-void charstring_pool_t::subroutinize() { // needs: testMode
+subr_set charstring_pool_t::subroutinize() { // needs: testMode
   std::vector<substring_t> substrings = getSubstrings();
   std::map<light_substring_t, substring_t*> substrMap;
   
   // set up map with initial values
   for (substring_t &substr : substrings) {
-    substrMap[light_substring_t(substr.getStart(), substr.size())] = &substr;
+    substr.setAdjCost(substr.cost(*this));
+    substr.syncPrice();
+    substrMap[light_substring_t(substr.begin(*this), substr.end(*this))] = &substr;
   }
 
   unsigned substringChunkSize = substrings.size() / NUM_THREADS + 1;
@@ -304,23 +334,36 @@ void charstring_pool_t::subroutinize() { // needs: testMode
 
     std::cout << "Round " << runCount + 1 << " Done!" << std::endl;
 
-    // TODO cutdown
+    std::cout << substrings.size() << std::endl;
+    // cutdown
+    // TODO see if vector erasing is a bottleneck
     if (runCount <= NUM_ROUNDS - 2) { // python checks for testMode
       // if (runCount < NUM_ROUNDS - 2) { // python does trueCost for == NUM_ROUNDS - 2
         auto substrIt = substrings.begin();
-        auto encIter = substrEncodings.begin();
-        for (; substrIt != substrings.end(); ++substrIt, ++encIter) {
+        auto encListIter = substrEncodings.begin();
+        assert(substrings.size() == substrEncodings.size());
+        for (; substrIt != substrings.end(); ++encListIter) {
           if (substrIt->subrSaving(*this) <= 0) {
-            substrings.erase(substrIt);
-            substrMap.erase(light_substring_t(substrIt->getStart(), substrIt->size()));
-            for (encoding_item& enc_item : *encIter) {
-              enc_item.substr->increaseFreq(substrIt->getFreq());
+            substrMap.erase(light_substring_t(substrIt->begin(*this), substrIt->end(*this)));
+            for (encoding_list::iterator encItem = encListIter->begin(); encItem != encListIter->end(); ++encItem) {
+              encItem->substr->increaseFreq(substrIt->getFreq());
             }
+            substrings.erase(substrIt);
+          }
+          else {
+            ++substrIt;
           }
         }
       // }
     }
+    std::cout << substrings.size() << std::endl;
   }
+
+  subr_set ans;
+  ans.glyphEncodings = glyphEncodings;
+  ans.gsubrEncodings = substrEncodings;
+
+  return ans;
 }
 
 std::vector<encoding_list> optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
@@ -330,9 +373,9 @@ std::vector<encoding_list> optimizeSubstrings(std::map<light_substring_t, substr
                         std::vector<substring_t> &substrings) {
   std::vector<encoding_list> result;
   for (auto it = substrings.begin() + start; it != substrings.begin() + stop; ++it) {
-    auto ans = optimizeCharstring(it->begin(csPool), it->end(csPool), substrMap);
+    auto ans = optimizeCharstring(it->begin(csPool), it->end(csPool), substrMap, csPool);
     result.push_back(ans.first);
-    it->setPrice(ans.second);
+    it->setAdjCost(ans.second);
   }
 
   return result;
@@ -345,16 +388,17 @@ std::vector<encoding_list> optimizeGlyphstrings(std::map<light_substring_t, subs
   std::vector<encoding_list> result;
   for (unsigned i = start; i < stop; ++i) {
     charstring_t cs = csPool.getCharstring(i);
-    result.push_back(optimizeCharstring(cs.begin, cs.end, substrMap).first);
+    result.push_back(optimizeCharstring(cs.begin, cs.end, substrMap, csPool).first);
   }
   return result;
 }
 
-std::pair<encoding_list, uint16_t> optimizeCharstring(
+std::pair<encoding_list, float> optimizeCharstring(
       const_tokiter_t begin, const_tokiter_t end,
-      std::map<light_substring_t, substring_t*> &substrMap) {
+      std::map<light_substring_t, substring_t*> &substrMap,
+      charstring_pool_t& csPool) {
   uint16_t lenCharstring = end - begin;
-  std::vector<uint16_t> results(lenCharstring + 1);
+  std::vector<float> results(lenCharstring + 1);
   std::vector<int> nextEncIdx(lenCharstring, -1);
   std::vector<substring_t*> nextEncSubstr(lenCharstring, NULL);
 
@@ -368,9 +412,11 @@ std::pair<encoding_list, uint16_t> optimizeCharstring(
     for (int j = i + 1; j <= lenCharstring; ++j, ++curToken) {
       curCost += curToken->size();
 
-      auto entryIt = substrMap.find(light_substring_t(i, j - i));
+      light_substring_t key(begin + i, begin + j);
+      int test = key.end - key.begin;
+      auto entryIt = substrMap.find(key);
       substring_t* substr;
-      uint16_t option;
+      float option;
       if (entryIt != substrMap.end()) {
         // TODO check to not subroutinize with yourself
         substr = entryIt->second;
@@ -384,7 +430,7 @@ std::pair<encoding_list, uint16_t> optimizeCharstring(
       if (option < minOption || minOption == -1) {
         minOption = option;
         minEncIdx = j;
-        minEncSubstr = NULL;
+        minEncSubstr = substr;
       }
     }
 
@@ -393,7 +439,6 @@ std::pair<encoding_list, uint16_t> optimizeCharstring(
     nextEncSubstr[i] = minEncSubstr;
   }
 
-  uint16_t marketCost = results[0];
   encoding_list ans;
   int curEncIdx = 0;
 
@@ -410,7 +455,7 @@ std::pair<encoding_list, uint16_t> optimizeCharstring(
     }
   }
 
-  return std::pair<encoding_list, uint16_t>(ans, marketCost);
+  return std::pair<encoding_list, float>(ans, results[0]);
 }
 
 std::vector<substring_t> charstring_pool_t::getSubstrings() {
@@ -539,8 +584,9 @@ void charstring_pool_t::finalize() {
   finalized = true;
 }
 
-const_tokiter_t charstring_pool_t::getTokenIter(unsigned idx) const {
-  return pool.begin() + idx;
+const_tokiter_t charstring_pool_t::get(unsigned idx) const {
+  const_tokiter_t x = pool.begin() + idx;
+  return x;
 }
 
 inline unsigned charstring_pool_t::quarkFor(unsigned char* data, unsigned len) {
@@ -595,20 +641,27 @@ struct charstring_pool_t::suffixSortFunctor {
                     const std::vector<unsigned> &_rev)
                   : pool(_pool), offset(_offset), rev(_rev) {}
   bool operator()(unsigned a, unsigned b) {
+    // XXX make sure this is right
     int aLen = offset[rev[a] + 1] - a;
     int bLen = offset[rev[b] + 1] - b;
-    if (aLen == bLen) {
-      auto aFirst = pool.begin() + a;
+    auto aFirst = pool.begin() + a;
+    auto bFirst = pool.begin() + b;
+
+    if (aLen < bLen) {
       auto aLast = pool.begin() + offset[rev[a] + 1];
-      auto bFirst = pool.begin() + b;
       auto p = std::mismatch(aFirst, aLast, bFirst);
       if (p.first == aLast)
-        return false;
+        return true;
       else
         return *p.first < *p.second;
     }
     else {
-      return aLen < bLen;
+      auto bLast = pool.begin() + offset[rev[b] + 1];
+      auto p = std::mismatch(bFirst, bLast, aFirst);
+      if (p.first == bLast)
+        return false;
+      else
+        return *p.second < *p.first;
     }
   }
 };
@@ -763,6 +816,5 @@ int main(int argc, const char* argv[]) {
 
   csPool.subroutinize();
   std::cout << "finished subroutinize()" << std::endl;
-
   return 0;
 }

@@ -50,16 +50,18 @@ typedef struct charstring_t {
 
 class light_substring_t {
 public:
-  light_substring_t (uint32_t _start, uint32_t _len) : start(_start), len(_len) {};
+  light_substring_t (const_tokiter_t _begin, const_tokiter_t _end)
+        : begin(_begin), end(_end) {}
+  light_substring_t (uint32_t start, uint32_t len, charstring_pool_t* pool);
   light_substring_t& operator=(const light_substring_t &other) {
-    start = other.start;
-    len = other.len;
+    begin = other.begin;
+    end = other.end;
     return *this;
   };
   bool operator<(const light_substring_t &other) const;
 
-  uint32_t start;
-  uint32_t len;
+  const_tokiter_t begin;
+  const_tokiter_t end;
 };
 
 class substring_t {
@@ -80,21 +82,23 @@ public:
   inline uint32_t size();
   inline uint32_t getStart();
   void updatePrice();
-  uint32_t getFreq();
+  uint32_t getFreq() const;
   void resetFreq();
   void incrementFreq();
   void increaseFreq(unsigned amt);
   void decrementFreq();
-  uint16_t getPrice() const;
-  void setPrice(uint16_t newPrice);
+  float getPrice() const;
+  void setPrice(float newPrice);
+  void setAdjCost(float value);
+  void syncPrice();
 
 private:
   uint32_t start;
   uint32_t len;
   uint32_t freq;
   uint16_t _cost;
-  uint16_t adjCost;
-  uint16_t price;
+  float adjCost;
+  float price;
 
   int doSubrSaving(int subCost) const;
   uint16_t doCost(const charstring_pool_t &chPool) const;
@@ -107,6 +111,12 @@ typedef struct encoding_item {
 
 typedef std::vector<encoding_item> encoding_list;
 
+typedef struct subr_set {
+  std::vector<encoding_list> glyphEncodings;
+  std::vector<substring_t> gsubrs;
+  std::vector<encoding_list> gsubrEncodings; 
+} subr_set;
+
 std::vector<encoding_list> optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
                         charstring_pool_t &csPool,
                         unsigned start,
@@ -116,19 +126,19 @@ std::vector<encoding_list> optimizeGlyphstrings(std::map<light_substring_t, subs
                         charstring_pool_t &csPool,
                         unsigned start,
                         unsigned stop);
-std::pair<encoding_list, uint16_t> optimizeCharstring(const_tokiter_t begin, const_tokiter_t end,
-                        std::map<light_substring_t, substring_t*> &substrMap);
+std::pair<encoding_list, float> optimizeCharstring(const_tokiter_t begin, const_tokiter_t end,
+                        std::map<light_substring_t, substring_t*> &substrMap,
+                        charstring_pool_t& csPool);
 
 class charstring_pool_t {
 public:
   charstring_pool_t (unsigned nCharstrings);
-  void subroutinize();
-  void compress();
+  subr_set subroutinize();
   charstring_t getCharstring(unsigned idx);
   void addRawCharstring(char* data, unsigned len);
   void setFDSelect(unsigned char* rawFD);
   void finalize();
-  const_tokiter_t getTokenIter(unsigned idx) const;
+  const_tokiter_t get(unsigned idx) const;
 
 private:
   tokmap_t quarkMap;

@@ -12,3 +12,4 @@ cffCompressor: cffCompressor.o
 	$(CC) $(CXXFLAGS) -o $@ -c -O$(O) $<
 clean:
 	rm -f cffCompressor.o cffCompressor
+ALL: clean all
