@@ -64,7 +64,7 @@ bool light_substring_t::operator<(const light_substring_t &other) const {
     else
       return *p.first < *p.second;
   }
-  else {
+  else { // thisLen >= otherLen
     auto p = std::mismatch(other.begin, other.end, begin);
     if (p.first == other.end)
       return false;
@@ -82,10 +82,11 @@ light_substring_t::light_substring_t (uint32_t start, uint32_t len, charstring_p
 
 // substring_t ===============
 substring_t::substring_t (unsigned _len, unsigned _start, unsigned _freq)
-  : start(_start), len(_len), freq(_freq), _cost(0) {}
+  : flatten(true), start(_start), len(_len), freq(_freq), _cost(0) {}
 
 substring_t::substring_t (const substring_t &other)
-  : start(other.start), len(other.len), freq(other.freq), _cost(0) {}
+  : flatten(other.flatten), start(other.start), len(other.len),
+    freq(other.freq), _cost(0) {}
 
 const_tokiter_t substring_t::begin(const charstring_pool_t &chPool) const {
   return chPool.get(start);
@@ -246,7 +247,66 @@ charstring_pool_t::charstring_pool_t (unsigned nCharstrings)
   offset.push_back(0);
 }
 
-subr_set charstring_pool_t::subroutinize() { // needs: testMode
+void charstring_pool_t::writeSubrs(subr_set encoding, std::ostream outFile) {
+  // produce output
+  std::vector< std::vector<char> > glyphs(count);
+  for (unsigned i = 0; i < count; ++i) {
+    std::vector<char> outVector = glyphs[i];
+    charstring_t cs = getCharstring(i);
+    encoding_list enc = encoding.glyphEncodings->at(i);
+
+    // TODO: this method
+  }
+
+  // write count
+  outFile.put(count);
+
+  // write offSize
+}
+
+std::vector<char> charstring_pool_t::getProgram(charstring_t cs,
+                        encoding_list enc, uint32_t gbias, uint32_t lbias[]) {
+  std::vector<char> ans;
+  // if (enc.size() > 0 && enc[0].pos != 0) {
+  //   std::copy(cs.begin, cs.begin + enc[0].pos, ans.end());
+  // }
+  // for (encoding_list::iterator encIt = enc.begin(); encIt != enc.end(); ++encIt) {
+
+  // }
+
+  return ans;
+}
+
+std::vector<unsigned char> charstring_pool_t::formatInt(int num) {
+  std::vector<unsigned char> ret;
+  if (num >= -107 && num <= 107) {
+    ret.push_back((unsigned char) num + 139);
+  }
+  else if (num >= 108 && num <= 1131) {
+    unsigned char first = (num - 108) / 256;
+    unsigned char second = num - 108 - first * 256;
+    assert(((int) first) * 256 + (int) second + 108);
+    ret.push_back(first + 247);
+    ret.push_back(second);
+  }
+  else if (num >= -1131 && num <= -108) {
+    unsigned char first = (num + 108) / 256;
+    unsigned char second = -num - 108 - first * 256;
+    assert(-((int) first) * 256 - (int) second - 108);
+    ret.push_back(first + 251);
+    ret.push_back(second);
+  }
+  else {
+    assert(num >= -32768 && num <= 32767);
+
+    ret.push_back((unsigned char) 28);
+    ret.push_back((unsigned char) ((num & 0xff00) >> 8));
+    ret.push_back((unsigned char) (num & 0xff));
+  }
+  return ret;
+}
+
+subr_set charstring_pool_t::subroutinize() { // TODO: testMode
   std::vector<substring_t> substrings = getSubstrings();
   std::map<light_substring_t, substring_t*> substrMap;
   
@@ -259,19 +319,18 @@ subr_set charstring_pool_t::subroutinize() { // needs: testMode
 
   unsigned substringChunkSize = substrings.size() / NUM_THREADS + 1;
   unsigned glyphChunkSize = count / NUM_THREADS + 1;
-  std::vector<encoding_list> substrEncodings;
   std::vector<encoding_list> glyphEncodings;
   std::vector<std::future<std::vector<encoding_list>>> futures;
+  std::vector<std::thread> threads;
 
   for (unsigned runCount = 0; runCount < 4; ++runCount) {
     // update market
-    for (substring_t &substr : substrings) {
+    for (substring_t& substr : substrings) {
       substr.updatePrice();
     }
 
     // minimize cost of substrings
-    futures.clear();
-    substrEncodings.clear();
+    threads.clear();
     for (unsigned i = 0; i < NUM_THREADS; ++i) {
       if (i * substringChunkSize >= substrings.size())
         break;
@@ -280,17 +339,15 @@ subr_set charstring_pool_t::subroutinize() { // needs: testMode
       if (stop > substrings.size())
         stop = substrings.size();
 
-      futures.push_back(std::async(std::launch::async,
-                            optimizeSubstrings,
+      threads.push_back(std::thread(optimizeSubstrings,
                             std::ref(substrMap),
                             std::ref(*this),
                             i * substringChunkSize,
                             stop,
                             std::ref(substrings)));
     }
-    for (auto threadIt = futures.begin(); threadIt != futures.end(); ++threadIt) {
-      std::vector<encoding_list> res = threadIt->get();
-      substrEncodings.insert(substrEncodings.end(), res.begin(), res.end());
+    for (auto threadIt = threads.begin(); threadIt != threads.end(); ++threadIt) {
+      threadIt->join();
     }
 
     // minimize cost of glyphstrings
@@ -317,16 +374,16 @@ subr_set charstring_pool_t::subroutinize() { // needs: testMode
     }
 
     // update usages
-    for (substring_t &substr : substrings) {
+    for (substring_t& substr : substrings) {
       substr.resetFreq();
     }
 
-    for (encoding_list &encList : substrEncodings) {
-      for (encoding_item &enc : encList) {
+    for (substring_t& substr : substrings) {
+      for (encoding_item& enc : substr.encoding) {
         enc.substr->incrementFreq();
       }
     }
-    for (encoding_list &encList : substrEncodings) {
+    for (encoding_list &encList : glyphEncodings) {
       for (encoding_item &enc : encList) {
         enc.substr->incrementFreq();
       }
@@ -340,12 +397,11 @@ subr_set charstring_pool_t::subroutinize() { // needs: testMode
     if (runCount <= NUM_ROUNDS - 2) { // python checks for testMode
       // if (runCount < NUM_ROUNDS - 2) { // python does trueCost for == NUM_ROUNDS - 2
         auto substrIt = substrings.begin();
-        auto encListIter = substrEncodings.begin();
-        assert(substrings.size() == substrEncodings.size());
-        for (; substrIt != substrings.end(); ++encListIter) {
+        for (; substrIt != substrings.end();) {
           if (substrIt->subrSaving(*this) <= 0) {
             substrMap.erase(light_substring_t(substrIt->begin(*this), substrIt->end(*this)));
-            for (encoding_list::iterator encItem = encListIter->begin(); encItem != encListIter->end(); ++encItem) {
+            // heuristic:
+            for (encoding_list::iterator encItem = substrIt->encoding.begin(); encItem != substrIt->encoding.end(); ++encItem) {
               encItem->substr->increaseFreq(substrIt->getFreq());
             }
             substrings.erase(substrIt);
@@ -359,26 +415,37 @@ subr_set charstring_pool_t::subroutinize() { // needs: testMode
     std::cout << substrings.size() << std::endl;
   }
 
+  // make all reachable substrings non-flat
+  auto encIt = glyphEncodings.begin();
+  std::queue<substring_t*> q;
+  for (; encIt != glyphEncodings.end(); ++encIt) {
+    for (encoding_list::iterator it = encIt->begin(); it != encIt->end(); ++it)
+      q.push(it->substr);
+    while (!q.empty()) {
+      substring_t* cur = q.front();
+      // for ()
+      q.pop();
+    }
+  }
+  // std::sort()
+
   subr_set ans;
-  ans.glyphEncodings = glyphEncodings;
-  ans.gsubrEncodings = substrEncodings;
+  ans.glyphEncodings = &glyphEncodings;
+  ans.gsubrs = &substrings;
 
   return ans;
 }
 
-std::vector<encoding_list> optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
+void optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
                         charstring_pool_t &csPool,
                         unsigned start,
                         unsigned stop,
                         std::vector<substring_t> &substrings) {
-  std::vector<encoding_list> result;
   for (auto it = substrings.begin() + start; it != substrings.begin() + stop; ++it) {
     auto ans = optimizeCharstring(it->begin(csPool), it->end(csPool), substrMap, csPool);
-    result.push_back(ans.first);
+    it->encoding = ans.first;
     it->setAdjCost(ans.second);
   }
-
-  return result;
 }
 
 std::vector<encoding_list> optimizeGlyphstrings(std::map<light_substring_t, substring_t*> &substrMap,
@@ -413,7 +480,6 @@ std::pair<encoding_list, float> optimizeCharstring(
       curCost += curToken->size();
 
       light_substring_t key(begin + i, begin + j);
-      int test = key.end - key.begin;
       auto entryIt = substrMap.find(key);
       substring_t* substr;
       float option;
@@ -641,7 +707,6 @@ struct charstring_pool_t::suffixSortFunctor {
                     const std::vector<unsigned> &_rev)
                   : pool(_pool), offset(_offset), rev(_rev) {}
   bool operator()(unsigned a, unsigned b) {
-    // XXX make sure this is right
     int aLen = offset[rev[a] + 1] - a;
     int bLen = offset[rev[b] + 1] - b;
     auto aFirst = pool.begin() + a;
@@ -655,7 +720,7 @@ struct charstring_pool_t::suffixSortFunctor {
       else
         return *p.first < *p.second;
     }
-    else {
+    else { // aLen >= bLen
       auto bLast = pool.begin() + offset[rev[b] + 1];
       auto p = std::mismatch(bFirst, bLast, aFirst);
       if (p.first == bLast)
@@ -675,7 +740,7 @@ std::vector<unsigned> charstring_pool_t::generateSuffixes() {
   for (unsigned i = 0; i < pool.size(); ++i)
     suffixes.push_back(i);
 
-  std::sort(suffixes.begin(), suffixes.end(), suffixSortFunctor(pool, offset, rev));
+  std::stable_sort(suffixes.begin(), suffixes.end(), suffixSortFunctor(pool, offset, rev));
   return suffixes;
 }
 
@@ -715,6 +780,23 @@ std::vector<unsigned> charstring_pool_t::generateLCP(std::vector<unsigned> &suff
   return lcp;
 }
 
+bool charstring_pool_t::verify_lcp(std::vector<unsigned>& lcp, std::vector<unsigned>& suffixes) {
+  for (unsigned i = 1; i < pool.size(); ++i) {
+    auto thisCur = pool.begin() + suffixes[i];
+    auto befCur = pool.begin() + suffixes[i - 1];
+    auto thisEnd = pool.begin() + offset[rev[suffixes[i]] + 1];
+    auto befEnd = pool.begin() + offset[rev[suffixes[i - 1]] + 1];
+    for (unsigned j = 0; j < lcp[i]; ++j) {
+      assert(*thisCur == *befCur);
+      ++thisCur;
+      ++befCur;
+    }
+    assert(*thisCur != *befCur || thisCur == thisEnd || befCur == befEnd);
+  }
+
+  return true;
+}
+
 std::vector<substring_t> charstring_pool_t::generateSubstrings
               (std::vector<unsigned> &suffixes, std::vector<unsigned> &lcp) {
   assert(finalized);
@@ -745,9 +827,9 @@ std::vector<substring_t> charstring_pool_t::generateSubstrings
     }
   }
 
-  // NOTE: python also allows sorting by length
-  std::sort(substrings.begin(), substrings.end(),
-    [this](const substring_t a, const substring_t b) {return a.subrSaving(*this) > b.subrSaving(*this);});
+  // NOTE: python sorts by length or saving
+  // std::sort(substrings.begin(), substrings.end(),
+  //   [this](const substring_t a, const substring_t b) {return a.subrSaving(*this) > b.subrSaving(*this);});
 
   return substrings;
 }
@@ -816,5 +898,6 @@ int main(int argc, const char* argv[]) {
 
   csPool.subroutinize();
   std::cout << "finished subroutinize()" << std::endl;
+
   return 0;
 }

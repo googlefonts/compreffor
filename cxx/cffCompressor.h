@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <queue>
 
 class token_t;
 struct charstring_t;
@@ -64,6 +65,13 @@ public:
   const_tokiter_t end;
 };
 
+typedef struct encoding_item {
+  uint16_t pos;
+  substring_t* substr;
+} encoding_item;
+
+typedef std::vector<encoding_item> encoding_list;
+
 class substring_t {
 public:
   substring_t (unsigned _len, unsigned _start, unsigned _freq);
@@ -92,6 +100,10 @@ public:
   void setAdjCost(float value);
   void syncPrice();
 
+  uint16_t pos;
+  bool flatten;
+  encoding_list encoding;
+
 private:
   uint32_t start;
   uint32_t len;
@@ -104,20 +116,12 @@ private:
   uint16_t doCost(const charstring_pool_t &chPool) const;
 };
 
-typedef struct encoding_item {
-  uint16_t pos;
-  substring_t* substr;
-} encoding_item;
-
-typedef std::vector<encoding_item> encoding_list;
-
 typedef struct subr_set {
-  std::vector<encoding_list> glyphEncodings;
-  std::vector<substring_t> gsubrs;
-  std::vector<encoding_list> gsubrEncodings; 
+  std::vector<encoding_list>* glyphEncodings;
+  std::vector<substring_t>* gsubrs;
 } subr_set;
 
-std::vector<encoding_list> optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
+void optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
                         charstring_pool_t &csPool,
                         unsigned start,
                         unsigned stop,
@@ -133,12 +137,18 @@ std::pair<encoding_list, float> optimizeCharstring(const_tokiter_t begin, const_
 class charstring_pool_t {
 public:
   charstring_pool_t (unsigned nCharstrings);
+  void writeSubrs(subr_set encoding, std::ostream outFile);
+  std::vector<char> getProgram(charstring_t cs,
+                        encoding_list enc, uint32_t gbias, uint32_t lbias[]);
+  std::vector<unsigned char> formatInt(int num);
   subr_set subroutinize();
   charstring_t getCharstring(unsigned idx);
   void addRawCharstring(char* data, unsigned len);
   void setFDSelect(unsigned char* rawFD);
   void finalize();
   const_tokiter_t get(unsigned idx) const;
+
+  bool verify_lcp(std::vector<unsigned>& lcp, std::vector<unsigned>& suffixes);
 
 private:
   tokmap_t quarkMap;
