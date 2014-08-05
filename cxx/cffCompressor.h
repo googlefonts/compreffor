@@ -66,7 +66,7 @@ public:
 };
 
 typedef struct encoding_item {
-  uint16_t pos;
+  uint32_t pos;
   substring_t* substr;
 } encoding_item;
 
@@ -99,6 +99,7 @@ public:
   void setPrice(float newPrice);
   void setAdjCost(float value);
   void syncPrice();
+  std::vector<unsigned char> getTranslatedValue(const charstring_pool_t& chPool) const;
 
   uint16_t pos;
   bool flatten;
@@ -116,10 +117,7 @@ private:
   uint16_t doCost(const charstring_pool_t &chPool) const;
 };
 
-typedef struct subr_set {
-  std::vector<encoding_list>* glyphEncodings;
-  std::vector<substring_t>* gsubrs;
-} subr_set;
+typedef std::pair<std::vector<encoding_list>, std::vector<substring_t> > subr_pair;
 
 void optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
                         charstring_pool_t &csPool,
@@ -137,22 +135,28 @@ std::pair<encoding_list, float> optimizeCharstring(const_tokiter_t begin, const_
 class charstring_pool_t {
 public:
   charstring_pool_t (unsigned nCharstrings);
-  void writeSubrs(subr_set encoding, std::ostream outFile);
-  std::vector<char> getProgram(charstring_t cs,
-                        encoding_list enc, uint32_t gbias, uint32_t lbias[]);
+  void writeSubrs(
+              std::vector<substring_t>& substrings,
+              std::vector<encoding_list>& glyphEncodings,
+              std::ostream& outFile);
   std::vector<unsigned char> formatInt(int num);
-  subr_set subroutinize();
+  void subroutinize(
+              std::vector<substring_t>& substrings,
+              std::vector<encoding_list>& glyphEncodings);
+  std::vector<substring_t> getSubstrings();
   charstring_t getCharstring(unsigned idx);
   void addRawCharstring(char* data, unsigned len);
   void setFDSelect(unsigned char* rawFD);
   void finalize();
   const_tokiter_t get(unsigned idx) const;
+  std::vector<unsigned char> translateToken(const token_t& tok) const;
 
   bool verify_lcp(std::vector<unsigned>& lcp, std::vector<unsigned>& suffixes);
 
 private:
   tokmap_t quarkMap;
   unsigned nextQuark;
+  std::vector<std::string> revQuark;
   std::vector<token_t> pool;
   std::vector<unsigned> offset;
   std::vector<unsigned char> fdSelect;
@@ -161,10 +165,9 @@ private:
   unsigned count;
   bool finalized;
 
-  inline unsigned quarkFor(unsigned char* data, unsigned len);
+  inline uint16_t quarkFor(unsigned char* data, unsigned len);
   void addRawToken(unsigned char* data, unsigned len);
   int_type generateValue(unsigned char* data, unsigned len);
-  std::vector<substring_t> getSubstrings();
   std::vector<unsigned> generateSuffixes();
   struct suffixSortFunctor;
   std::vector<unsigned> generateLCP(std::vector<unsigned> &suffixes);

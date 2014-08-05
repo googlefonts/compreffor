@@ -156,6 +156,17 @@ int substring_t::doSubrSaving(int subCost) const {
          - subrOverhead;
 }
 
+std::vector<unsigned char> substring_t::getTranslatedValue(const charstring_pool_t& chPool) const {
+  std::vector<unsigned char> ans;
+
+  for (auto it = begin(chPool); it != end(chPool); ++it) {
+    std::vector<unsigned char> transTok = chPool.translateToken(*it);
+    ans.insert(ans.end(), transTok.begin(), transTok.end());
+  }
+
+  return ans;
+}
+
 substring_t& substring_t::operator=(const substring_t &other) {
   if (*this != other) {
     start = other.start;
@@ -247,34 +258,38 @@ charstring_pool_t::charstring_pool_t (unsigned nCharstrings)
   offset.push_back(0);
 }
 
-void charstring_pool_t::writeSubrs(subr_set encoding, std::ostream outFile) {
-  // produce output
-  std::vector< std::vector<char> > glyphs(count);
-  for (unsigned i = 0; i < count; ++i) {
-    std::vector<char> outVector = glyphs[i];
-    charstring_t cs = getCharstring(i);
-    encoding_list enc = encoding.glyphEncodings->at(i);
+void charstring_pool_t::writeSubrs(
+              std::vector<substring_t>& subrs,
+              std::vector<encoding_list>& glyphEncodings,
+              std::ostream& outFile) {
+  /// write subrs
+  // write number of subrs
+  uint32_t numSubrs = (uint32_t) subrs.size();
+  outFile.write(reinterpret_cast<const char*>(&numSubrs), 4);
 
-    // TODO: this method
+  // write each subr's bytecode, seperated by 0
+  for (substring_t& subr : subrs) {
+    std::vector<unsigned char> subrVal = subr.getTranslatedValue(*this);
+    for (unsigned char& part : subrVal) {
+      outFile.put(part);
+    }
+    outFile.put(0);
   }
 
-  // write count
-  outFile.put(count);
-
-  // write offSize
-}
-
-std::vector<char> charstring_pool_t::getProgram(charstring_t cs,
-                        encoding_list enc, uint32_t gbias, uint32_t lbias[]) {
-  std::vector<char> ans;
-  // if (enc.size() > 0 && enc[0].pos != 0) {
-  //   std::copy(cs.begin, cs.begin + enc[0].pos, ans.end());
-  // }
-  // for (encoding_list::iterator encIt = enc.begin(); encIt != enc.end(); ++encIt) {
-
-  // }
-
-  return ans;
+  /// write glyph encoding instructions
+  std::cerr << glyphEncodings.size();
+  for (encoding_list& glyphEnc : glyphEncodings) {
+    // write the number of subrs called
+    assert(glyphEnc.size() < 128);
+    outFile.put(glyphEnc.size());
+    // write each call
+    for (encoding_item& enc : glyphEnc) {
+      outFile.write(reinterpret_cast<const char*>(&enc.pos), sizeof(enc.pos)); // 4 bytes
+      uint32_t subrIndex = (enc.substr - &subrs[0]);
+      assert(subrIndex < subrs.size());
+      outFile.write(reinterpret_cast<const char*>(&subrIndex), 4);
+    }
+  }
 }
 
 std::vector<unsigned char> charstring_pool_t::formatInt(int num) {
@@ -306,8 +321,10 @@ std::vector<unsigned char> charstring_pool_t::formatInt(int num) {
   return ret;
 }
 
-subr_set charstring_pool_t::subroutinize() { // TODO: testMode
-  std::vector<substring_t> substrings = getSubstrings();
+void charstring_pool_t::subroutinize(
+              std::vector<substring_t>& substrings,
+              std::vector<encoding_list>& glyphEncodings) { // TODO: testMode
+  // std::vector<substring_t> substrings = getSubstrings();
   std::map<light_substring_t, substring_t*> substrMap;
   
   // set up map with initial values
@@ -318,11 +335,10 @@ subr_set charstring_pool_t::subroutinize() { // TODO: testMode
 
   unsigned substringChunkSize = substrings.size() / NUM_THREADS + 1;
   unsigned glyphChunkSize = count / NUM_THREADS + 1;
-  std::vector<encoding_list> glyphEncodings;
   std::vector<std::future<std::vector<encoding_list>>> futures;
   std::vector<std::thread> threads;
 
-  for (unsigned runCount = 0; runCount < 4; ++runCount) {
+  for (unsigned runCount = 0; runCount < NUM_ROUNDS; ++runCount) {
     // update market
     substrMap.clear();
     for (substring_t& substr : substrings) {
@@ -401,13 +417,13 @@ subr_set charstring_pool_t::subroutinize() { // TODO: testMode
       if (substr.getFreq() > 0)
         ++nused;
     }
-    std::cout << "avg: " << (float) sum / substrings.size() << std::endl;
-    std::cout << "max: " << max << std::endl;
-    std::cout << "used: " << nused << std::endl;
+    std::cerr << "avg: " << (float) sum / substrings.size() << std::endl;
+    std::cerr << "max: " << max << std::endl;
+    std::cerr << "used: " << nused << std::endl;
 
-    std::cout << "Round " << runCount + 1 << " Done!" << std::endl;
+    std::cerr << "Round " << runCount + 1 << " Done!" << std::endl;
 
-    std::cout << substrings.size() << std::endl;
+    std::cerr << substrings.size() << std::endl;
     // cutdown
     // TODO see if vector erasing is a bottleneck
     if (runCount <= NUM_ROUNDS - 2) { // python checks for testMode
@@ -431,7 +447,7 @@ subr_set charstring_pool_t::subroutinize() { // TODO: testMode
         }
       // }
     }
-    std::cout << substrings.size() << std::endl;
+    std::cerr << substrings.size() << std::endl;
   }
 
   // make all reachable substrings non-flat
@@ -446,13 +462,6 @@ subr_set charstring_pool_t::subroutinize() { // TODO: testMode
       q.pop();
     }
   }
-  // std::sort()
-
-  subr_set ans;
-  ans.glyphEncodings = &glyphEncodings;
-  ans.gsubrs = &substrings;
-
-  return ans;
 }
 
 void optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
@@ -698,17 +707,20 @@ const_tokiter_t charstring_pool_t::get(unsigned idx) const {
   return x;
 }
 
-inline unsigned charstring_pool_t::quarkFor(unsigned char* data, unsigned len) {
+inline uint16_t charstring_pool_t::quarkFor(unsigned char* data, unsigned len) {
   // TODO: verify using a string key isn't a time problem
   std::string key((const char*) data, (size_t) len);
-  if (quarkMap.find(key) == quarkMap.end()) {
+  auto it = quarkMap.find(key);
+  if (it == quarkMap.end()) {
     assert(nextQuark < 65536);
+    assert(revQuark.size() == nextQuark);
     unsigned q = nextQuark++;
     quarkMap[key] = q;
-    return q;
+    revQuark.push_back(key);
+    return (uint16_t) q;
   }
   else {
-    return quarkMap[key];
+    return (uint16_t) it->second;
   }
 }
 
@@ -730,7 +742,7 @@ int_type charstring_pool_t::generateValue(unsigned char* data, unsigned len) {
     v <<= 8 * (int_size - len - 1);
   }
   else {
-    unsigned q = quarkFor(data, len);
+    uint16_t q = quarkFor(data, len);
     v = len;
     v <<= 8;
     v |= data[0];
@@ -876,6 +888,23 @@ std::vector<substring_t> charstring_pool_t::generateSubstrings
 
   return substrings;
 }
+
+std::vector<unsigned char> charstring_pool_t::translateToken(const token_t& tok) const {
+  size_t tokLen = tok.size();
+
+  if (tokLen < int_size) {
+    std::vector<unsigned char> ans;
+    for (unsigned i = 0; i < tokLen; ++i)
+      ans.push_back(tok.part(i + 1));
+    return ans; 
+  }
+  else {
+    uint16_t q = (tok.part(2) << 8) + tok.part(3);
+    std::string orig = revQuark.at(q);
+    std::vector<unsigned char> ans(orig.begin(), orig.end());
+    return ans;
+  }
+}
 // end charstring_pool_t ========= 
 
 
@@ -885,11 +914,11 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
   unsigned char countBuffer[2];
   instream.read((char*) countBuffer, 2);
   count = (countBuffer[0] << 8) | (countBuffer[1]);
-  std::cout << "count: " << count << std::endl;
+  std::cerr << "count: " << count << std::endl;
 
   unsigned char offSize;
   instream.read((char*) &offSize, 1);
-  std::cout << "offSize: " << (int) offSize << std::endl;
+  std::cerr << "offSize: " << (int) offSize << std::endl;
 
   uint32_t offset[count + 1];
   unsigned char offsetBuffer[(count + 1) * offSize];
@@ -902,7 +931,7 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
     offset[i] -= 1; // CFF is 1-indexed(-ish)
   }
   assert(offset[0] == 0);
-  std::cout << "offset loaded" << std::endl;
+  std::cerr << "offset loaded" << std::endl;
 
   charstring_pool_t csPool(count);
 
@@ -914,7 +943,7 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
     csPool.addRawCharstring(data, len);
   }
 
-  std::cout << "loaded " << offset[count] << " bytes of charstrings" << std::endl;
+  std::cerr << "loaded " << offset[count] << " bytes of charstrings" << std::endl;
 
   unsigned char fdCount;
   instream.read((char *) &fdCount, 1);
@@ -923,11 +952,11 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
     instream.read((char*) buf, count);
     csPool.setFDSelect(buf);
     free(buf);
-    std::cout << "loaded FDSelect" << std::endl;
+    std::cerr << "loaded FDSelect" << std::endl;
   }
   else {
     csPool.setFDSelect(NULL);
-    std::cout << "no FDSelect loaded" << std::endl;
+    std::cerr << "no FDSelect loaded" << std::endl;
   }
 
   csPool.finalize();
@@ -939,8 +968,13 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
 int main(int argc, const char* argv[]) {
   charstring_pool_t csPool = CharstringPoolFactory(std::cin);
 
-  csPool.subroutinize();
-  std::cout << "finished subroutinize()" << std::endl;
+  std::vector<substring_t> subrs = csPool.getSubstrings();
+  std::vector<encoding_list> glyphEncodings;
+  csPool.subroutinize(subrs, glyphEncodings);
+  std::cerr << "finished subroutinize()" << std::endl;
+
+  csPool.writeSubrs(subrs, glyphEncodings, std::cout);
+  std::cerr << "wrote response" << std::endl;
 
   return 0;
 }
