@@ -74,7 +74,7 @@ bool light_substring_t::operator<(const light_substring_t &other) const {
 }
 
 light_substring_t::light_substring_t (uint32_t start, uint32_t len, charstring_pool_t* pool) {
-  begin = pool->get(0) + start;
+  begin = pool->get(start);
   end = begin + len;
 }
 // end light_substring_t =====
@@ -314,7 +314,6 @@ subr_set charstring_pool_t::subroutinize() { // TODO: testMode
   for (substring_t &substr : substrings) {
     substr.setAdjCost(substr.cost(*this));
     substr.syncPrice();
-    substrMap[light_substring_t(substr.begin(*this), substr.end(*this))] = &substr;
   }
 
   unsigned substringChunkSize = substrings.size() / NUM_THREADS + 1;
@@ -325,11 +324,14 @@ subr_set charstring_pool_t::subroutinize() { // TODO: testMode
 
   for (unsigned runCount = 0; runCount < 4; ++runCount) {
     // update market
+    substrMap.clear();
     for (substring_t& substr : substrings) {
       substr.updatePrice();
+      substrMap[light_substring_t(substr.begin(*this), substr.end(*this))] = &substr;
     }
 
     // minimize cost of substrings
+    // XXX consider redoing substringChunkSize
     threads.clear();
     for (unsigned i = 0; i < NUM_THREADS; ++i) {
       if (i * substringChunkSize >= substrings.size())
@@ -389,6 +391,20 @@ subr_set charstring_pool_t::subroutinize() { // TODO: testMode
       }
     }
 
+    unsigned sum = 0;
+    unsigned max = 0;
+    unsigned nused = 0;
+    for (substring_t& substr : substrings) {
+      sum += substr.getFreq();
+      if (substr.getFreq() > max)
+        max = substr.getFreq();
+      if (substr.getFreq() > 0)
+        ++nused;
+    }
+    std::cout << "avg: " << (float) sum / substrings.size() << std::endl;
+    std::cout << "max: " << max << std::endl;
+    std::cout << "used: " << nused << std::endl;
+
     std::cout << "Round " << runCount + 1 << " Done!" << std::endl;
 
     std::cout << substrings.size() << std::endl;
@@ -399,12 +415,15 @@ subr_set charstring_pool_t::subroutinize() { // TODO: testMode
         auto substrIt = substrings.begin();
         for (; substrIt != substrings.end();) {
           if (substrIt->subrSaving(*this) <= 0) {
-            substrMap.erase(light_substring_t(substrIt->begin(*this), substrIt->end(*this)));
+            light_substring_t key(substrIt->begin(*this), substrIt->end(*this));
+            size_t response = substrMap.erase(key);
             // heuristic:
             for (encoding_list::iterator encItem = substrIt->encoding.begin(); encItem != substrIt->encoding.end(); ++encItem) {
               encItem->substr->increaseFreq(substrIt->getFreq());
             }
-            substrings.erase(substrIt);
+            // NOTE: the following line invalidates all pointers in substrMap!!!
+            // They will be regenerated at the top of the loop.
+            substrIt = substrings.erase(substrIt);
           }
           else {
             ++substrIt;
@@ -460,6 +479,30 @@ std::vector<encoding_list> optimizeGlyphstrings(std::map<light_substring_t, subs
   return result;
 }
 
+void printMap(std::map<light_substring_t, substring_t*> &substrMap) {
+  std::cout << "subr map: ";
+  int count = 0;
+  int stupidCount = 0;
+  for (auto x = substrMap.begin(); x != substrMap.end(); ++x) {
+    std::cout << x->second->getStart() << " " << x->second->size() << ", ";
+    if (x->second->getStart() == 4910 && x->second->size() == 16)
+      ++stupidCount;
+    ++count;
+  }
+  std::cout << "(" << count << ") ";
+  std::cout << "(" << stupidCount << ")" << std::endl << std::endl;
+}
+
+void debSub(std::vector<substring_t>& substrings) {
+  std::cout << "subr vector: ";
+  int stupCount = 0;
+  for (auto x = substrings.begin(); x != substrings.end(); ++x) {
+    if (x->getStart() == 4910 && x->size() == 16)
+      ++stupCount;
+  }
+  std::cout << "(" << stupCount << ")" << std::endl << std::endl;
+}
+
 std::pair<encoding_list, float> optimizeCharstring(
       const_tokiter_t begin, const_tokiter_t end,
       std::map<light_substring_t, substring_t*> &substrMap,
@@ -483,7 +526,7 @@ std::pair<encoding_list, float> optimizeCharstring(
       auto entryIt = substrMap.find(key);
       substring_t* substr;
       float option;
-      if (entryIt != substrMap.end()) {
+      if (!(i == 0 && j == lenCharstring) && entryIt != substrMap.end()) {
         // TODO check to not subroutinize with yourself
         substr = entryIt->second;
         option = substr->getPrice() + results[j];
