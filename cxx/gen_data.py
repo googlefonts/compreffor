@@ -14,4 +14,5 @@ if __name__ == '__main__':
     with open(sys.argv[2], 'w') as out_f:
         print("# of charstrings == %d" % len(td.CharStrings))
 
-        write_data(td, out_f)
+        data = write_data(td)
+        out_f.write(data)

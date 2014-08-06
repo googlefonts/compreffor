@@ -5,17 +5,18 @@
 #include <assert.h>
 #include <string.h>
 #include <algorithm>
-#include <map>
-#include <iostream>
+#include <forward_list>
 #include <fstream>
 #include <future>
-#include <vector>
+#include <iostream>
 #include <list>
-#include <string>
+#include <map>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <queue>
+#include <vector>
 
 class token_t;
 struct charstring_t;
@@ -45,7 +46,7 @@ private:
 
 typedef struct charstring_t {
   tokiter_t begin;
-  tokiter_t end;
+  uint32_t len;
   unsigned char fd;
 } charstring_t;
 
@@ -121,29 +122,28 @@ typedef std::pair<std::vector<encoding_list>, std::vector<substring_t> > subr_pa
 
 void optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
                         charstring_pool_t &csPool,
-                        unsigned start,
-                        unsigned stop,
-                        std::vector<substring_t> &substrings);
+                        std::list<substring_t>::iterator begin,
+                        std::list<substring_t>::iterator end);
 std::vector<encoding_list> optimizeGlyphstrings(std::map<light_substring_t, substring_t*> &substrMap,
                         charstring_pool_t &csPool,
                         unsigned start,
                         unsigned stop);
-std::pair<encoding_list, float> optimizeCharstring(const_tokiter_t begin, const_tokiter_t end,
+std::pair<encoding_list, float> optimizeCharstring(const_tokiter_t begin, uint32_t len,
                         std::map<light_substring_t, substring_t*> &substrMap,
-                        charstring_pool_t& csPool);
+                        charstring_pool_t& csPool, bool isSubstring);
 
 class charstring_pool_t {
 public:
   charstring_pool_t (unsigned nCharstrings);
   void writeSubrs(
-              std::vector<substring_t>& substrings,
+              std::list<substring_t>& substrings,
               std::vector<encoding_list>& glyphEncodings,
               std::ostream& outFile);
   std::vector<unsigned char> formatInt(int num);
   void subroutinize(
-              std::vector<substring_t>& substrings,
+              std::list<substring_t>& substrings,
               std::vector<encoding_list>& glyphEncodings);
-  std::vector<substring_t> getSubstrings();
+  std::list<substring_t> getSubstrings();
   charstring_t getCharstring(unsigned idx);
   void addRawCharstring(char* data, unsigned len);
   void setFDSelect(unsigned char* rawFD);
@@ -151,6 +151,7 @@ public:
   const_tokiter_t get(unsigned idx) const;
   std::vector<unsigned char> translateToken(const token_t& tok) const;
 
+  void printSuffix(unsigned idx, bool printVal=false);
   bool verify_lcp(std::vector<unsigned>& lcp, std::vector<unsigned>& suffixes);
 
 private:
@@ -171,7 +172,7 @@ private:
   std::vector<unsigned> generateSuffixes();
   struct suffixSortFunctor;
   std::vector<unsigned> generateLCP(std::vector<unsigned> &suffixes);
-  std::vector<substring_t> generateSubstrings(std::vector<unsigned> &suffixes,
+  std::list<substring_t> generateSubstrings(std::vector<unsigned> &suffixes,
                                               std::vector<unsigned> &lcp);
 };
 

@@ -8,27 +8,19 @@ import sys
 import os
 from fontTools.ttLib import TTFont
 
-def write_data(td, f):
-    """Writes CharStrings and FDSelect from the TopDict td into the file f."""
-    td.CharStrings.charStringsIndex.getCompiler(td.strings, None).toFile(f)
+def write_data(td):
+    """Writes CharStrings and FDSelect from the TopDict td into a string buffer."""
+    out = StringIO.StringIO()
+    td.CharStrings.charStringsIndex.getCompiler(td.strings, None).toFile(out)
     try:
         fdselect = struct.pack('B', len(td.FDArray)) + array.array('B', list(td.FDSelect)).tostring()
     except AttributeError:
         fdselect = struct.pack('B', 1)
-    f.write(fdselect)
+    out.write(fdselect)
+    return out.getvalue()
 
-if __name__ == '__main__':
-    f = TTFont(sys.argv[1])
-    td = f['CFF '].cff.topDictIndex[0]
-    print("PYTHON>>> # of charstrings == %d" % len(td.CharStrings))
-
-    p = subprocess.Popen(
-                        [os.path.join(os.path.dirname(__file__), 'cffCompressor')],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE)
-    write_data(td, p.stdin)
-    results, _ = p.communicate()
-    results = array.array("B", results)
+def read_data(td, result_string):
+    results = array.array("B", result_string)
     num_subrs = struct.unpack_from('<I', results[:4])[0]
     print("PYTHON>>> %d" % num_subrs)
 
@@ -58,3 +50,22 @@ if __name__ == '__main__':
         glyph_encodings.append(enc)
 
     assert pos == len(results)
+    return (subr_code, glyph_encodings)
+
+def run(file_name):
+    f = TTFont(file_name)
+    td = f['CFF '].cff.topDictIndex[0]
+    print("PYTHON>>> # of charstrings == %d" % len(td.CharStrings))
+
+    p = subprocess.Popen(
+                        [os.path.join(os.path.dirname(__file__), 'cffCompressor')],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE)
+    input_data = write_data(td)
+    results, _ = p.communicate(input=input_data)
+    subr_code, glyph_encodings = read_data(td, results)
+
+    print glyph_encodings
+
+if __name__ == '__main__':
+    run(sys.argv[1])
