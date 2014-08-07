@@ -198,11 +198,11 @@ bool substring_t::operator!=(const substring_t &other) const {
   return !(*this == other);
 }
 
-inline uint32_t substring_t::size() {
+inline uint32_t substring_t::size() const {
   return len;
 }
 
-inline uint32_t substring_t::getStart() {
+inline uint32_t substring_t::getStart() const {
   return start;
 }
 
@@ -260,6 +260,25 @@ charstring_pool_t::charstring_pool_t(unsigned nCharstrings)
   offset.push_back(0);
 }
 
+void charstring_pool_t::writeEncoding(
+                              const encoding_list& enc,
+                              const std::map<const substring_t*, uint16_t>& index,
+                              std::ostream& outFile) {
+  // write the number of subrs called
+  assert(enc.size() < 128);
+  outFile.put(enc.size());
+  // write each call
+  for (const encoding_item& enc_item : enc) {
+    outFile.write(
+              reinterpret_cast<const char*>(&enc_item.pos),
+              sizeof(enc_item.pos));  // 4 bytes
+    auto it = index.find(enc_item.substr);
+    assert(it != index.end());
+    uint32_t subrIndex = it->second;
+    outFile.write(reinterpret_cast<const char*>(&subrIndex), 4);
+  }
+}
+
 void charstring_pool_t::writeSubrs(
               std::list<substring_t>& subrs,
               std::vector<encoding_list>& glyphEncodings,
@@ -272,33 +291,27 @@ void charstring_pool_t::writeSubrs(
   // number subrs
   std::map<const substring_t*, uint16_t> index;
 
-  // write each subr's bytecode, seperated by 0
+  // write each subr's representative glyph and offset in that charstring
   uint32_t curIndex = 0;
   for (const substring_t& subr : subrs) {
     assert(curIndex < MAX_INT);
     index[&subr] = curIndex++;
-    std::vector<unsigned char> subrVal = subr.getTranslatedValue(*this);
-    for (unsigned const char& part : subrVal) {
-      outFile.put(part);
-    }
-    outFile.put(0);
+    uint32_t glyphIdx = rev[subr.getStart()];
+    uint32_t glyphOffset = subr.getStart() - offset[glyphIdx];
+    uint32_t subrLength = subr.size();
+    outFile.write(reinterpret_cast<const char*>(&glyphIdx), 4);
+    outFile.write(reinterpret_cast<const char*>(&glyphOffset), 4);
+    outFile.write(reinterpret_cast<const char*>(&subrLength), 4);
+  }
+
+  // after producing `index`, write subr encodings
+  for (const substring_t& subr : subrs) {
+    writeEncoding(subr.encoding, index, outFile);
   }
 
   /// write glyph encoding instructions
-  std::cerr << glyphEncodings.size();
   for (const encoding_list& glyphEnc : glyphEncodings) {
-    // write the number of subrs called
-    assert(glyphEnc.size() < 128);
-    outFile.put(glyphEnc.size());
-    // write each call
-    for (const encoding_item& enc : glyphEnc) {
-      outFile.write(
-                reinterpret_cast<const char*>(&enc.pos),
-                sizeof(enc.pos));  // 4 bytes
-      uint32_t subrIndex = index[enc.substr];
-      assert(subrIndex < subrs.size());
-      outFile.write(reinterpret_cast<const char*>(&subrIndex), 4);
-    }
+    writeEncoding(glyphEnc, index, outFile);
   }
 }
 

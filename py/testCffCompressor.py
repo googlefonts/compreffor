@@ -210,7 +210,7 @@ class TestCffCompressor(unittest.TestCase):
     def test_tokenCost(self):
         """Make sure single tokens can have their cost calculated"""
 
-        tokenCost = cffCompressor.CandidateSubr.tokenCost
+        tokenCost = cffCompressor.tokenCost
 
         self.assertEqual(tokenCost('hlineto'), 1)
         self.assertEqual(tokenCost('flex'), 2)

@@ -90,8 +90,8 @@ class substring_t {
     bool operator==(const substring_t &other) const;
     bool operator!=(const substring_t &other) const;
     substring_t& operator=(const substring_t &other);
-    inline uint32_t size();
-    inline uint32_t getStart();
+    inline uint32_t size() const;
+    inline uint32_t getStart() const;
     void updatePrice();
     uint32_t getFreq() const;
     void resetFreq();
@@ -189,6 +189,10 @@ class charstring_pool_t {
                                         std::vector<unsigned> &suffixes,
                                         std::vector<unsigned> &lcp);
     encoding_list getUpdatedEncoding(substring_t* subr);
+    void writeEncoding(
+              const encoding_list& enc,
+              const std::map<const substring_t*, uint16_t>& index,
+              std::ostream& outFile);
 };
 
 charstring_pool_t CharstringPoolFactory(std::istream& instream);

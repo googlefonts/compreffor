@@ -50,14 +50,114 @@ SINGLE_BYTE_OPS = set(['hstem',
                        'rlinecurve',
                        'vvcurveto',
                        'hhcurveto',
-                     # 'shortint',  # not really an operatr
+                     # 'shortint',  # not really an operator
                        'callgsubr',
                        'vhcurveto',
                        'hvcurveto'])
 
 __all__ = ["CandidateSubr", "SubstringFinder", "Compreffor"]
 
-class CandidateSubr(object):
+def tokenCost(token):
+        """Calculate the bytecode size of a T2 Charstring token"""
+
+        tp = type(token)
+        if issubclass(tp, basestring):
+            if token[:8] in ("hintmask", "cntrmask"):
+                return 1 + len(token[9:])
+            elif token in SINGLE_BYTE_OPS:
+                return 1
+            else:
+                return 2
+        elif tp == tuple:
+            assert token[0] in ("hintmask", "cntrmask")
+            return 1 + len(token[1])
+        elif tp == int:
+            if -107 <= token <= 107:
+                return 1
+            elif 108 <= token <= 1131 or -1131 <= token <= -108:
+                return 2
+            else:
+                return 3
+        elif tp == float:
+            return 5
+        assert 0
+
+class BaseCandidateSubr(object):
+    """
+    Base CandidateSubr object. Requires further implementation.
+
+    Subclasses must implement these methods:
+    usages
+    freq
+    cost
+    value
+    encoding
+
+    And should probably override the following:
+    __eq__
+    __neq__
+    __repr__
+    """
+
+    def __init__(self):
+        return NotImplemented
+
+    def subr_saving(self, use_usages=False, true_cost=False, call_cost=5, subr_overhead=3):
+        """
+        Return the savings that will be realized by subroutinizing
+        this substring.
+
+        Arguments:
+        use_usages -- indicate to use the value in `_usages` rather than `freq`
+        true_cost -- take account of subroutine calls
+        call_cost -- the cost to call a subroutine
+        subr_overhead -- the cost to define a subroutine
+        """
+
+        # NOTE: call_cost=5 gives better results for some reason
+        #       but that is really not correct
+
+        if use_usages:
+            amt = self.usages()
+        else:
+            amt = self.frequency()
+
+        if not true_cost:
+            cost = self.cost()
+        else:
+            cost = self.real_cost(call_cost=call_cost)
+
+        # TODO:
+        # - If substring ends in "endchar", we need no "return"
+        #   added and as such subr_overhead will be one byte
+        #   smaller.
+        # - The call_cost should be 3 or 4 if the position of the subr
+        #   is greater
+        return (  cost * amt # avoided copies
+                - cost # cost of subroutine body
+                - call_cost * amt # cost of calling
+                - subr_overhead) # cost of subr definition
+
+    def real_cost(self, call_cost=5):
+        """Account for subroutine calls in cost computation. Not cached because
+        the subroutines used will change over time."""
+
+        cost = self.cost()
+        cost += sum(-it[1].cost() + call_cost if not it[1]._flatten else it[1].real_cost(call_cost=call_cost)
+                    for it in self.encoding())
+        return cost
+
+    def __eq__(self, other):
+        if not isinstance(other, BaseCandidateSubr):
+            return NotImplemented
+        return self.value() == other.value()
+
+    def __ne__(self, other):
+        if not isinstance(other, BaseCandidateSubr):
+            return NotImplemented
+        return not(self == other)
+
+class CandidateSubr(BaseCandidateSubr):
     """
     Records a substring of a charstring that is generally
     repeated throughout many glyphs.
@@ -103,93 +203,32 @@ class CandidateSubr(object):
         assert self.cost_map != None
 
         try:
-            if not hasattr(self, '__cost'):
+            try:
+                return self.__cost
+            except AttributeError:
                 self.__cost = sum([self.cost_map[t] for t in self.value()])
-            return self.__cost
+                return self.__cost
         except:
             raise Exception('Translated token not recognized')
 
-    def real_cost(self, call_cost=5):
-        """Account for subroutine calls in cost computation. Not cached because
-        the subroutines used will change over time."""
+    def encoding(self):
+        return self._encoding
 
-        cost = self.cost()
-        cost += sum(-it[1].cost() + call_cost if not it[1]._flatten else it[1].real_cost()
-                    for it in self._encoding)
-        return cost
+    def usages(self):
+        return self._usages
 
-    def subr_saving(self, use_usages=False, true_cost=False, call_cost=5, subr_overhead=3):
-        """
-        Return the savings that will be realized by subroutinizing
-        this substring.
-
-        Arguments:
-        use_usages -- indicate to use the value in `_usages` rather than `freq`
-        true_cost -- take account of subroutine calls
-        call_cost -- the cost to call a subroutine
-        subr_overhead -- the cost to define a subroutine
-        """
-
-        # NOTE: call_cost=5 gives better results for some reason
-        #       but that is really not correct
-
-        if use_usages:
-            amt = self._usages
-        else:
-            amt = self.freq
-
-        if not true_cost:
-            cost = self.cost()
-        else:
-            cost = self.real_cost(call_cost=call_cost)
-
-        # TODO:
-        # - If substring ends in "endchar", we need no "return"
-        #   added and as such subr_overhead will be one byte
-        #   smaller.
-        # - The call_cost should be 3 or 4 if the position of the subr
-        #   is greater
-        return (  cost * amt # avoided copies
-                - cost # cost of subroutine body
-                - call_cost * amt # cost of calling
-                - subr_overhead) # cost of subr definition
-
-    @staticmethod
-    def tokenCost(token):
-        """Calculate the bytecode size of a T2 Charstring token"""
-
-        tp = type(token)
-        if issubclass(tp, basestring):
-            if token[:8] in ("hintmask", "cntrmask"):
-                return 1 + len(token[9:])
-            elif token in SINGLE_BYTE_OPS:
-                return 1
-            else:
-                return 2
-        elif tp == tuple:
-            assert token[0] in ("hintmask", "cntrmask")
-            return 1 + len(token[1])
-        elif tp == int:
-            if -107 <= token <= 107:
-                return 1
-            elif 108 <= token <= 1131 or -1131 <= token <= -108:
-                return 2
-            else:
-                return 3
-        elif tp == float:
-            return 5
-        assert 0
-
+    def frequency(self):
+        return self.freq
 
     def __eq__(self, other):
-        if type(other) != CandidateSubr:
+        if not isinstance(other, CandidateSubr):
             return NotImplemented
         return self.length == other.length and self.location == other.location
 
     def __ne__(self, other):
-        if type(other) != CandidateSubr:
+        if not isinstance(other, CandidateSubr):
             return NotImplemented
-        return self.length != other.length or self.location != other.location
+        return not(self == other)
 
     def __repr__(self):
         return "<CandidateSubr: %d x %dreps>" % (self.length, self.freq)
@@ -231,7 +270,7 @@ class SubstringFinder(object):
 
         self._completed_suffixes = False
 
-        self.verbose = verbose
+        self.verbose = verbose 
 
     def process_chstrings(self, glyph_set):
         """Remap the charstring alphabet and put into self.data"""
@@ -260,7 +299,7 @@ class SubstringFinder(object):
                 if not tok in keymap:
                     keymap[tok] = next_key
                     self.rev_keymap.append(tok)
-                    self.cost_map.append(CandidateSubr.tokenCost(tok))
+                    self.cost_map.append(tokenCost(tok))
                     next_key += 1
                 program.append(keymap[tok])
 
@@ -351,10 +390,7 @@ class SubstringFinder(object):
         start_indices = deque()
         self.substrings = []
 
-        for i, (glyph_idx, tok_idx) in enumerate(self.suffixes):
-            current = self.data[glyph_idx][tok_idx:]
-
-            min_l = lcp[i]
+        for i, min_l in enumerate(lcp):
             # First min_l items are still the same.
 
             # Pop the rest from previous and account for.
@@ -367,9 +403,10 @@ class SubstringFinder(object):
                 if freq < min_freq:
                     continue
                 
-                substr = CandidateSubr(l,
+                substr = CandidateSubr(
+                                       l,
                                        self.suffixes[start_idx],
-                                       i - start_idx,
+                                       freq,
                                        self.data,
                                        self.cost_map)
                 if substr.subr_saving() > 0 or not check_positive:
@@ -473,8 +510,14 @@ class Compreffor(object):
                                     n_locals)
 
         encoding = ans["glyph_encodings"]
-        lsubrs = ans["lsubrs"]
         gsubrs = ans["gsubrs"]
+        lsubrs = ans["lsubrs"]
+        
+        Compreffor.process_glyphstrings(top_dict, encoding, gsubrs, lsubrs)
+
+    @staticmethod
+    def apply_subrs(top_dict, encoding, gsubrs, lsubrs):
+        multi_font = hasattr(top_dict, "FDArray")
         gbias = psCharStrings.calcSubrBias(gsubrs)
         lbias = [psCharStrings.calcSubrBias(subrs) for subrs in lsubrs]
 
@@ -482,9 +525,9 @@ class Compreffor(object):
             for g in top_dict.charset:
                 charstring, sel = top_dict.CharStrings.getItemAndSelector(g)
                 enc = encoding[g]
-                self.collapse_hintmask(charstring.program)
-                self.update_program(charstring.program, enc, gbias, lbias, sel)
-                self.expand_hintmask(charstring.program)
+                Compreffor.collapse_hintmask(charstring.program)
+                Compreffor.update_program(charstring.program, enc, gbias, lbias, sel)
+                Compreffor.expand_hintmask(charstring.program)
 
             for fd in top_dict.FDArray:
                 if not hasattr(fd.Private, "Subrs"):
@@ -498,9 +541,9 @@ class Compreffor(object):
         else:
             for glyph, enc in encoding.iteritems():
                 charstring = top_dict.CharStrings[glyph]
-                self.collapse_hintmask(charstring.program)
-                self.update_program(charstring.program, enc, gbias, lbias, 0)
-                self.expand_hintmask(charstring.program)
+                Compreffor.collapse_hintmask(charstring.program)
+                Compreffor.update_program(charstring.program, enc, gbias, lbias, 0)
+                Compreffor.expand_hintmask(charstring.program)
 
             assert len(lsubrs) == 1
 
@@ -514,22 +557,24 @@ class Compreffor(object):
                 item = psCharStrings.T2CharString(program=subr._program)
                 top_dict.GlobalSubrs.append(item)
 
-    def test_call_cost(self, subr, subrs):
+    @staticmethod
+    def test_call_cost(subr, subrs):
         """See how much it would cost to call subr if it were inserted into subrs"""
 
         if len(subrs) >= 2263:
-            if subrs[2262]._usages >= subr._usages:
+            if subrs[2262].usages() >= subr.usages():
                 return 3
         if len(subrs) >= 215:
-            if subrs[214]._usages >= subr._usages:
+            if subrs[214].usages() >= subr.usages():
                 return 2
         return 1
 
-    def insert_by_usage(self, subr, subrs):
+    @staticmethod
+    def insert_by_usage(subr, subrs):
         """Insert subr into subrs mainting a sort by usage"""
 
         subrs.append(subr)
-        subrs.sort(key=lambda s: s._usages, reverse=True)
+        subrs.sort(key=lambda s: s.usages(), reverse=True)
 
     def iterative_encode(self, glyph_set, fdselect=None, fdlen=1):
         """
@@ -642,6 +687,9 @@ class Compreffor(object):
 
             if self.verbose or self.print_status:
                 print("Round %d Done!" % (run_count + 1))
+                print("avg: %f" % (float(sum(substr._usages for substr in substrings)) / len(substrings)))
+                print("max: %d" % max(substr._usages for substr in substrings))
+                print("used: %d" % sum(substr._usages > 0 for substr in substrings))
 
             if run_count <= self.NROUNDS - 2 and not self.test_mode:
                 cutdown_time = time.time()
@@ -671,9 +719,32 @@ class Compreffor(object):
             print("Finished iterative market (%gs)" % (time.time() - start_time))
             print("%d candidate subrs found" % len(substrings))
 
+        gsubrs, lsubrs = Compreffor.process_subrs(
+                                            glyph_set_keys,
+                                            encodings,
+                                            fdlen,
+                                            fdselect,
+                                            substrings,
+                                            rev_keymap,
+                                            self.NSUBRS_LIMIT,
+                                            self.SUBR_NEST_LIMIT,
+                                            self.verbose)
+
+        return {"glyph_encodings": dict(zip(glyph_set_keys, encodings)),
+                "lsubrs": lsubrs,
+                "gsubrs": gsubrs}
+
+    @staticmethod
+    def process_subrs(glyph_set_keys, encodings, fdlen, fdselect, substrings, rev_keymap, subr_limit, nest_limit, verbose=False):
+        post_time = time.time()
+
         def mark_reachable(cand_subr, fdidx):
-            if fdidx not in cand_subr._fdidx:
-                cand_subr._fdidx.append(fdidx)
+            try:
+                if fdidx not in cand_subr._fdidx:
+                    cand_subr._fdidx.append(fdidx)
+            except AttributeError:
+                cand_subr._fdidx = [fdidx]
+
             for it in cand_subr._encoding:
                 mark_reachable(it[1], fdidx)
         if fdselect != None:
@@ -686,52 +757,51 @@ class Compreffor(object):
                 for it in encoding:
                     mark_reachable(it[1], 0)
 
-        subrs = [s for s in substrings if s._usages > 0 and bool(s._fdidx) and s.subr_saving(use_usages=True, true_cost=True) > 0]
+        subrs = [s for s in substrings if s.usages() > 0 and bool(s._fdidx) and s.subr_saving(use_usages=True, true_cost=True) > 0]
 
-        bad_substrings = [s for s in substrings if s._usages == 0 or not bool(s._fdidx) or s.subr_saving(use_usages=True, true_cost=True) <= 0]
-        if self.verbose:
+        bad_substrings = [s for s in substrings if s.usages() == 0 or not bool(s._fdidx) or s.subr_saving(use_usages=True, true_cost=True) <= 0]
+        if verbose:
             print("%d substrings unused or negative saving subrs" % len(bad_substrings))
 
         def set_flatten(s): s._flatten = True
         map(set_flatten, bad_substrings)
-
 
         gsubrs = []
         lsubrs = [[] for _ in xrange(fdlen)]
 
         subrs.sort(key=lambda s: s.subr_saving(use_usages=True, true_cost=True))
 
-        while subrs and (any(len(s) < self.NSUBRS_LIMIT for s in lsubrs) or 
-                         len(gsubrs) < self.NSUBRS_LIMIT):
+        while subrs and (any(len(s) < subr_limit for s in lsubrs) or 
+                         len(gsubrs) < subr_limit):
             subr = subrs[-1]
             del subrs[-1]
             if len(subr._fdidx) == 1:
                 lsub_index = lsubrs[subr._fdidx[0]]
-                if len(gsubrs) < self.NSUBRS_LIMIT:
-                    if len(lsub_index) < self.NSUBRS_LIMIT:
+                if len(gsubrs) < subr_limit:
+                    if len(lsub_index) < subr_limit:
                         # both have space
-                        gcost = self.test_call_cost(subr, gsubrs)
-                        lcost = self.test_call_cost(subr, lsub_index)
+                        gcost = Compreffor.test_call_cost(subr, gsubrs)
+                        lcost = Compreffor.test_call_cost(subr, lsub_index)
 
                         if gcost < lcost:
-                            self.insert_by_usage(subr, gsubrs)
+                            Compreffor.insert_by_usage(subr, gsubrs)
                             subr._global = True
                         else:
-                            self.insert_by_usage(subr, lsub_index)
+                            Compreffor.insert_by_usage(subr, lsub_index)
                     else:
                         # just gsubrs has space
-                        self.insert_by_usage(subr, gsubrs)
+                        Compreffor.insert_by_usage(subr, gsubrs)
                         subr._global = True
-                elif len(lsub_index) < self.NSUBRS_LIMIT:
+                elif len(lsub_index) < subr_limit:
                     # just lsubrs has space
-                    self.insert_by_usage(subr, lsub_index)
+                    Compreffor.insert_by_usage(subr, lsub_index)
                 else:
                     # we must skip :(
                     bad_substrings.append(subr)
             else:
-                if len(gsubrs) < self.NSUBRS_LIMIT:
+                if len(gsubrs) < subr_limit:
                     # we can put it in globals
-                    self.insert_by_usage(subr, gsubrs)
+                    Compreffor.insert_by_usage(subr, gsubrs)
                     subr._global = True
                 else:
                     # no room for this one
@@ -742,18 +812,18 @@ class Compreffor(object):
         map(set_flatten, bad_substrings)
 
         # fix any nesting issues
-        self.calc_nesting(gsubrs)
-        map(self.calc_nesting, lsubrs)
+        Compreffor.calc_nesting(gsubrs)
+        map(Compreffor.calc_nesting, lsubrs)
 
-        too_nested = [s for s in itertools.chain(*lsubrs) if s._max_call_depth > self.SUBR_NEST_LIMIT]
-        too_nested.extend([s for s in gsubrs if s._max_call_depth > self.SUBR_NEST_LIMIT])
+        too_nested = [s for s in itertools.chain(*lsubrs) if s._max_call_depth > nest_limit]
+        too_nested.extend([s for s in gsubrs if s._max_call_depth > nest_limit])
         map(set_flatten, too_nested)
         bad_substrings.extend(too_nested)
-        lsubrs = [[s for s in lsubrarr if s._max_call_depth <= self.SUBR_NEST_LIMIT] for lsubrarr in lsubrs]
-        gsubrs = [s for s in gsubrs if s._max_call_depth <= self.SUBR_NEST_LIMIT]
+        lsubrs = [[s for s in lsubrarr if s._max_call_depth <= nest_limit] for lsubrarr in lsubrs]
+        gsubrs = [s for s in gsubrs if s._max_call_depth <= nest_limit]
         too_nested = len(too_nested)
 
-        if self.verbose:
+        if verbose:
             print("%d substrings nested too deep" % too_nested)
             print("%d substrings being flattened" % len(bad_substrings))
 
@@ -765,7 +835,7 @@ class Compreffor(object):
 
         for subr_arr, bias in zip(itertools.chain([gsubrs], lsubrs),
                                   itertools.chain([gbias], lbias)):
-            subr_arr.sort(key=lambda s: s._usages, reverse=True)
+            subr_arr.sort(key=lambda s: s.usages(), reverse=True)
 
             if bias == 1131:
                 subr_arr[:] = subr_arr[216:1240] + subr_arr[0:216] + subr_arr[1240:]
@@ -779,8 +849,8 @@ class Compreffor(object):
             # substrings are run before longer ones
             if len(subr._fdidx) > 0:
                 program = [rev_keymap[tok] for tok in subr.value()]
-                self.update_program(program, subr._encoding, gbias, lbias, None)
-                self.expand_hintmask(program)
+                Compreffor.update_program(program, subr.encoding(), gbias, lbias, None)
+                Compreffor.expand_hintmask(program)
                 subr._program = program
 
         for subr_arr, sel in zip(itertools.chain([gsubrs], lsubrs),
@@ -789,15 +859,17 @@ class Compreffor(object):
                 program = [rev_keymap[tok] for tok in subr.value()]
                 if program[-1] not in ("endchar", "return"):
                     program.append("return")
-                self.update_program(program, subr._encoding, gbias, lbias, sel)
-                self.expand_hintmask(program)
+                Compreffor.update_program(program, subr.encoding(), gbias, lbias, sel)
+                Compreffor.expand_hintmask(program)
                 subr._program = program
 
-        return {"glyph_encodings": dict(zip(glyph_set_keys, encodings)),
-                "lsubrs": lsubrs,
-                "gsubrs": gsubrs}
+        if verbose:
+            print("POST-TIME: %gs" % (time.time() - post_time))
 
-    def calc_nesting(self, subrs):
+        return (gsubrs, lsubrs)
+
+    @staticmethod
+    def calc_nesting(subrs):
         """Update each entry of subrs with their call depth. This
         is stored in the '_max_call_depth' attribute of the subr"""
 
@@ -819,7 +891,8 @@ class Compreffor(object):
             if not hasattr(subr, "_max_call_depth"):
                 increment_subr_depth(subr, 1)
 
-    def update_program(self, program, encoding, gbias, lbias_arr, fdidx):
+    @staticmethod
+    def update_program(program, encoding, gbias, lbias_arr, fdidx):
         """
         Applies the provided `encoding` to the provided `program`. I.e., all
         specified subroutines are actually called in the program. This mutates
@@ -858,7 +931,8 @@ class Compreffor(object):
                 offset += subr.length - 2
         return program
 
-    def collapse_hintmask(self, program):
+    @staticmethod
+    def collapse_hintmask(program):
         """Takes in a charstring and returns the same charstring
         with hintmasks combined into a single element"""
 
@@ -869,7 +943,8 @@ class Compreffor(object):
                 program[i:i+2] = [(program[i], program[i+1])]
 
 
-    def expand_hintmask(self, program):
+    @staticmethod
+    def expand_hintmask(program):
         """Expands collapsed hintmask tokens into two tokens"""
 
         piter = iter(enumerate(program))
@@ -909,6 +984,7 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose):
                     option = substr[1] + results[j]
                     substr = substr[0]
                 else:
+                    assert i == 0 and j == len(charstring)
                     substr = None
                     option = cur_cost + results[j]
             else:
@@ -958,7 +1034,7 @@ def human_size(num):
     return '%3.1f %s' % (num, 'GB')
 
 def main(filename=None, comp_fname=None, test=False, decompress=False,
-         verbose=False, check=False, **comp_kwargs):
+         verbose=False, check=False, comp_func=None, **comp_kwargs):
     if test:
         from testCffCompressor import TestCffCompressor
         test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
