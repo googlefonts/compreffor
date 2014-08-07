@@ -188,6 +188,7 @@ class charstring_pool_t {
     std::list<substring_t> generateSubstrings(
                                         std::vector<unsigned> &suffixes,
                                         std::vector<unsigned> &lcp);
+    encoding_list getUpdatedEncoding(substring_t* subr);
 };
 
 charstring_pool_t CharstringPoolFactory(std::istream& instream);

@@ -5,6 +5,7 @@ const float K = 0.1;
 const float ALPHA = 0.1;
 const unsigned NUM_THREADS = 100;
 const unsigned NUM_ROUNDS = 4;
+const unsigned MAX_INT = 65535;
 
 // token_t ============
 token_t::token_t(int_type value_) : value(value_) {}
@@ -268,8 +269,14 @@ void charstring_pool_t::writeSubrs(
   uint32_t numSubrs = (uint32_t) subrs.size();
   outFile.write(reinterpret_cast<const char*>(&numSubrs), 4);
 
+  // number subrs
+  std::map<const substring_t*, uint16_t> index;
+
   // write each subr's bytecode, seperated by 0
+  uint32_t curIndex = 0;
   for (const substring_t& subr : subrs) {
+    assert(curIndex < MAX_INT);
+    index[&subr] = curIndex++;
     std::vector<unsigned char> subrVal = subr.getTranslatedValue(*this);
     for (unsigned const char& part : subrVal) {
       outFile.put(part);
@@ -288,8 +295,7 @@ void charstring_pool_t::writeSubrs(
       outFile.write(
                 reinterpret_cast<const char*>(&enc.pos),
                 sizeof(enc.pos));  // 4 bytes
-      // uint32_t subrIndex = (enc.substr - &subrs[0]);
-      uint32_t subrIndex = 0;
+      uint32_t subrIndex = index[enc.substr];
       assert(subrIndex < subrs.size());
       outFile.write(reinterpret_cast<const char*>(&subrIndex), 4);
     }
@@ -452,19 +458,6 @@ void charstring_pool_t::subroutinize(
       // }
     }
     std::cerr << substrings.size() << std::endl;
-  }
-
-  /// make all reachable substrings non-flat (TODO)
-  auto encIt = glyphEncodings.begin();
-  std::queue<substring_t*> q;
-  for (; encIt != glyphEncodings.end(); ++encIt) {
-    for (encoding_list::iterator it = encIt->begin(); it != encIt->end(); ++it)
-      q.push(it->substr);
-    while (!q.empty()) {
-      substring_t* cur = q.front();
-      // for ()
-      q.pop();
-    }
   }
 }
 
@@ -969,11 +962,6 @@ int main(int argc, const char* argv[]) {
   charstring_pool_t csPool = CharstringPoolFactory(std::cin);
 
   std::list<substring_t> subrs = csPool.getSubstrings();
-  std::ofstream outFile("cxxsubrs.txt");
-  for (auto subr : subrs) {
-    outFile << subr.getStart() << " " << subr.size() << " " << subr.getFreq() << std::endl;
-  }
-  outFile.close();
   std::vector<encoding_list> glyphEncodings;
   csPool.subroutinize(subrs, glyphEncodings);
   std::cerr << "finished subroutinize()" << std::endl;

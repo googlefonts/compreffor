@@ -22,7 +22,6 @@ def write_data(td):
 def read_data(td, result_string):
     results = array.array("B", result_string)
     num_subrs = struct.unpack_from('<I', results[:4])[0]
-    print("PYTHON>>> %d" % num_subrs)
 
     # process subrs
     subr_code = []
@@ -34,6 +33,7 @@ def read_data(td, result_string):
             pos += 1
         subr_code.append(cur_buffer)
         pos += 1
+    print("PYTHON>>> %d subrs read" % num_subrs)
 
     # process glyph encodings
     glyph_encodings = []
@@ -52,9 +52,8 @@ def read_data(td, result_string):
     assert pos == len(results)
     return (subr_code, glyph_encodings)
 
-def run(file_name):
-    f = TTFont(file_name)
-    td = f['CFF '].cff.topDictIndex[0]
+def compreff(font):
+    td = font['CFF '].cff.topDictIndex[0]
     print("PYTHON>>> # of charstrings == %d" % len(td.CharStrings))
 
     p = subprocess.Popen(
@@ -64,8 +63,8 @@ def run(file_name):
     input_data = write_data(td)
     results, _ = p.communicate(input=input_data)
     subr_code, glyph_encodings = read_data(td, results)
-
     print glyph_encodings
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    f = TTFont(sys.argv[1])
+    compreff(f)
