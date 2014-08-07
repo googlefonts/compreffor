@@ -112,7 +112,7 @@ def compreff(font):
     for cs in td.CharStrings.values():
         cs.decompile()
 
-    # in order of charset I hope?
+    # in order of charset
     chstrings = map(lambda x: x.program, td.CharStrings.values())
     map(lambda x: Compreffor.collapse_hintmask(x), chstrings)
 
@@ -120,12 +120,12 @@ def compreff(font):
         s.chstrings = chstrings
     
     if hasattr(td, 'FDSelect'):
-        fdselect = lambda idx: td.FDSelect[idx]
+        fdselect = lambda g: td.CharStrings.getItemAndSelector(g)[1]
         fdlen = len(td.FDArray)
     else:
-        fdselect = lambda idx: 0
+        fdselect = None
         fdlen = 1
-    
+
     gsubrs, lsubrs = Compreffor.process_subrs(
                             td.charset,
                             glyph_encodings,

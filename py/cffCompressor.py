@@ -847,7 +847,7 @@ class Compreffor(object):
         for subr in sorted(bad_substrings, key=lambda s: len(s)):
             # NOTE: it is important this is run in order so shorter
             # substrings are run before longer ones
-            if len(subr._fdidx) > 0:
+            if hasattr(subr, '_fdidx') and len(subr._fdidx) > 0:
                 program = [rev_keymap[tok] for tok in subr.value()]
                 Compreffor.update_program(program, subr.encoding(), gbias, lbias, None)
                 Compreffor.expand_hintmask(program)
