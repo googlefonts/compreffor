@@ -513,7 +513,7 @@ class Compreffor(object):
         gsubrs = ans["gsubrs"]
         lsubrs = ans["lsubrs"]
         
-        Compreffor.process_glyphstrings(top_dict, encoding, gsubrs, lsubrs)
+        Compreffor.apply_subrs(top_dict, encoding, gsubrs, lsubrs)
 
     @staticmethod
     def apply_subrs(top_dict, encoding, gsubrs, lsubrs):

@@ -605,24 +605,36 @@ void charstring_pool_t::addRawCharstring(char* data, unsigned len) {
     unsigned tokSize;
     if (first < 28 || (first >= 29 && first < 32)) {
       if (first < 12) {
-        // operators 0-11
+        // operators 1-11
+        if (first == 1 || first == 3) {
+          // hstem/vstem
+          numHints += stackSize / 2;
+        }
         tokSize = 1;
       } else if (first == 12) {
         // escape (12) + addl operator code
         tokSize = 2;
       } else if (first < 19) {
         // operators 13-18
-        if (first == 18 || first == 23) {
-          // hstemhm/vstemhm
+        if (first == 18) {
+          // hstemhm
           numHints += stackSize / 2;
         }
-
         tokSize = 1;
       } else if (first < 21) {
         // hintmask/cntrmask (19/20)
-        tokSize = 1 + numHints / 4 + (numHints % 4 != 0) ? 1 : 0;
+        if (stackSize != 0) {
+            // account for additonal vhints on stack (assuming legal program)
+            assert(stackSize % 2 == 0);
+            numHints += stackSize / 2;
+        }
+        tokSize = 1 + numHints / 8 + ((numHints % 8 != 0) ? 1 : 0);
       } else if (first < 28) {
         // operators 21-27
+        if (first == 23) {
+            // vstemhm
+            numHints += stackSize / 2;
+        }
         tokSize = 1;
       } else {
         // operators 29-31

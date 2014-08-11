@@ -118,7 +118,7 @@ def compreff(font):
 
     for s in subrs:
         s.chstrings = chstrings
-    
+
     if hasattr(td, 'FDSelect'):
         fdselect = lambda g: td.CharStrings.getItemAndSelector(g)[1]
         fdlen = len(td.FDArray)
