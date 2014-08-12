@@ -104,7 +104,7 @@ def read_data(td, result_string):
     return (subrs, glyph_encodings)
 
 def compreff(font, verbose=False, **kwargs):
-    start_time = time.time()
+    full_start_time = start_time = time.time()
 
     assert len(font['CFF '].cff.topDictIndex) == 1
 
@@ -172,37 +172,59 @@ def compreff(font, verbose=False, **kwargs):
 
     Compreffor.apply_subrs(td, encoding, gsubrs, lsubrs)
 
+    if verbose:
+        print("Finished post-processing and output (delta %gs)" % (time.time() - start_time))
+        print("Total time: %gs" % (time.time() - full_start_time))
+
 def main(filename=None, comp_fname=None, test=False, decompress=False,
-         verbose=False, check=False, generate_cff=False, **comp_kwargs):
+         verbose=False, check=False, generate_cff=False, recursive=False,
+         **comp_kwargs):
     if test:
         pass
 
     if filename and comp_fname == None:
-        font = TTFont(filename)
-        orig_size = os.path.getsize(filename)
+        def handle_font(font_name):
+            font = TTFont(font_name)
 
-        if decompress:
-            from fontTools import subset
-            options = subset.Options()
-            options.decompress = True
-            subsetter = subset.Subsetter(options=options)
-            subsetter.populate(glyphs=font.getGlyphOrder())
-            subsetter.subset(font)
+            td = font['CFF '].cff.topDictIndex[0]
+            no_subrs = lambda fd: hasattr(fd, 'Subrs') and len(fd.Subrs) > 0
+            priv_subrs = (hasattr(td, 'FDArray') and
+                          any(no_subrs(fd) for fd in td.FDArray))
+            if len(td.GlobalSubrs) > 0 or priv_subrs:
+                print("Warning: There are subrs in %s" % font_name)
 
-        out_name = "%s.compressed%s" % os.path.splitext(filename)
+            orig_size = os.path.getsize(font_name)
 
-        compreff(font, verbose=verbose, **comp_kwargs)
+            if decompress:
+                from fontTools import subset
+                options = subset.Options()
+                options.decompress = True
+                subsetter = subset.Subsetter(options=options)
+                subsetter.populate(glyphs=font.getGlyphOrder())
+                subsetter.subset(font)
 
-        # save compressed font
-        font.save(out_name)
+            out_name = "%s.compressed%s" % os.path.splitext(font_name)
 
-        if generate_cff:
-            # save CFF version
-            font['CFF '].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], 'w'), None)
+            compreff(font, verbose=verbose, **comp_kwargs)
 
-        comp_size = os.path.getsize(out_name)
-        print("Compressed to %s -- saved %s" % 
-                (os.path.basename(out_name), human_size(orig_size - comp_size)))
+            # save compressed font
+            font.save(out_name)
+
+            if generate_cff:
+                # save CFF version
+                font['CFF '].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], 'w'), None)
+
+            comp_size = os.path.getsize(out_name)
+            print("Compressed to %s -- saved %s" %
+                    (os.path.basename(out_name), human_size(orig_size - comp_size)))
+
+        if recursive:
+            for root, dirs, files in os.walk(filename):
+                for fname in files:
+                    if os.path.splitext(fname)[1] == '.otf':
+                        handle_font(fname)
+        else:
+            handle_font(filename)
 
     if check:
         from testCffCompressor import test_compression_integrity, test_call_depth
@@ -236,6 +258,8 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--decompress', required=False, action='store_true',
                         help="decompress source before compressing (necessary if "
                              "there are subroutines in the source)")
+    parser.add_argument('-r', '--recursive', required=False, action='store_true',
+                        default=False)
     parser.add_argument('-n', '--nrounds', required=False, type=int,
                         help="the number of iterations to run the algorithm"
                              " (defaults to 4)")

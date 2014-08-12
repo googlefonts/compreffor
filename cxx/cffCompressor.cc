@@ -615,16 +615,15 @@ void charstring_pool_t::addRawCharstring(char* data, unsigned len) {
       } else if (first < 21) {
         // hintmask/cntrmask (19/20)
         if (stackSize != 0) {
-            // account for additonal vhints on stack (assuming legal program)
-            assert(stackSize % 2 == 0);
-            numHints += stackSize / 2;
+          // account for additonal vhints on stack (assuming legal program)
+          numHints += stackSize / 2;
         }
         tokSize = 1 + numHints / 8 + ((numHints % 8 != 0) ? 1 : 0);
       } else if (first < 28) {
         // operators 21-27
         if (first == 23) {
-            // vstemhm
-            numHints += stackSize / 2;
+          // vstemhm
+          numHints += stackSize / 2;
         }
         tokSize = 1;
       } else {
@@ -636,7 +635,7 @@ void charstring_pool_t::addRawCharstring(char* data, unsigned len) {
     } else {
       stackSize += 1;
 
-      if (first < 29) {
+      if (first == 28) {
         // 16-bit signed
         tokSize = 3;
       } else if (first < 247) {

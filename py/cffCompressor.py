@@ -482,7 +482,7 @@ class Compreffor(object):
         encoding = ans["glyph_encodings"]
         gsubrs = ans["gsubrs"]
         lsubrs = ans["lsubrs"]
-        
+
         Compreffor.apply_subrs(top_dict, encoding, gsubrs, lsubrs)
 
     @staticmethod
@@ -504,7 +504,7 @@ class Compreffor(object):
                     fd.Private.Subrs = cffLib.SubrsIndex()
             for subrs, subrs_index in zip(itertools.chain([gsubrs], lsubrs),
                                           itertools.chain([top_dict.GlobalSubrs], 
-                                             [fd.Private.Subrs for fd in top_dict.FDArray])):
+                                          [fd.Private.Subrs for fd in top_dict.FDArray])):
                 for subr in subrs:
                     item = psCharStrings.T2CharString(program=subr._program)
                     subrs_index.append(item)
@@ -1004,40 +1004,51 @@ def human_size(num):
     return '%3.1f %s' % (num, 'GB')
 
 def main(filename=None, comp_fname=None, test=False, decompress=False,
-         verbose=False, check=False, comp_func=None, **comp_kwargs):
+         verbose=False, check=False, generate_cff=False, recursive=False,
+         **comp_kwargs):
     if test:
         from testCffCompressor import TestCffCompressor
         test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
         unittest.TextTestRunner().run(test_suite)
 
     if filename and comp_fname == None:
-        font = TTFont(filename)
-        orig_size = os.path.getsize(filename)
+        def handle_font(font_name):
+            font = TTFont(font_name)
+            orig_size = os.path.getsize(font_name)
 
-        if decompress:
-            from fontTools import subset
-            options = subset.Options()
-            options.decompress = True
-            subsetter = subset.Subsetter(options=options)
-            subsetter.populate(glyphs=font.getGlyphOrder())
-            subsetter.subset(font)
+            if decompress:
+                from fontTools import subset
+                options = subset.Options()
+                options.decompress = True
+                subsetter = subset.Subsetter(options=options)
+                subsetter.populate(glyphs=font.getGlyphOrder())
+                subsetter.subset(font)
 
-        if verbose:
-            print("Compressing font through iterative_encode:")
-        out_name = "%s.compressed%s" % os.path.splitext(filename)
+            if verbose:
+                print("Compressing font through iterative_encode:")
+            out_name = "%s.compressed%s" % os.path.splitext(font_name)
 
-        compreffor = Compreffor(font, verbose=verbose, **comp_kwargs)
-        compreffor.compress()
+            compreffor = Compreffor(font, verbose=verbose, **comp_kwargs)
+            compreffor.compress()
 
-        # save compressed font
-        font.save(out_name)
+            # save compressed font
+            font.save(out_name)
 
-        # save CFF version
-        font["CFF "].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], "w"), None)
+            if generate_cff:
+                # save CFF version
+                font["CFF "].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], "w"), None)
 
-        comp_size = os.path.getsize(out_name)
-        print("Compressed to %s -- saved %s" % 
-                (os.path.basename(out_name), human_size(orig_size - comp_size)))
+            comp_size = os.path.getsize(out_name)
+            print("Compressed to %s -- saved %s" % 
+                    (os.path.basename(out_name), human_size(orig_size - comp_size)))
+
+        if recursive:
+            for root, dirs, files in os.walk(filename):
+                for fname in files:
+                    if os.path.splitext(fname)[1] == '.otf':
+                        handle_font(fname)
+        else:
+            handle_font(filename)
 
     if check:
         from testCffCompressor import test_compression_integrity, test_call_depth
@@ -1073,6 +1084,8 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--decompress", required=False, action="store_true",
                         help="decompress source before compressing (necessary if "
                              "there are subroutines in the source)")
+    parser.add_argument('-r', '--recursive', required=False, action='store_true',
+                        default=False)
     parser.add_argument("--chunkratio", required=False, type=float,
                         dest="chunk_ratio",
                         help="0-1, specify the percentage size of the"
@@ -1089,6 +1102,8 @@ if __name__ == "__main__":
                         dest="nsubrs_limit", help="limit to the number of "
                                                   " subroutines per INDEX"
                                                   " (defaults to 64K)")
+    parser.add_argument('--generatecff', required=False, action='store_true',
+                        dest='generate_cff', default=False)
 
     kwargs = vars(parser.parse_args())
 
