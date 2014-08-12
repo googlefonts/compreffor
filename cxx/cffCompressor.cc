@@ -4,8 +4,8 @@ const unsigned int_size = sizeof(int_type);
 const float K = 0.1;
 const float ALPHA = 0.1;
 const unsigned NUM_THREADS = 100;
-const unsigned NUM_ROUNDS = 4;
-const unsigned MAX_INT = 65535;
+const unsigned DEFAULT_NUM_ROUNDS = 4;
+const unsigned DEFAULT_MAX_SUBRS = 65535;
 
 // token_t ============
 token_t::token_t(int_type value_) : value(value_) {}
@@ -254,7 +254,17 @@ inline void substring_t::setPrice(float newPrice) {
 // charstring_pool_t ==========
 charstring_pool_t::charstring_pool_t(unsigned nCharstrings)
   : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
-    finalized(false) {
+    finalized(false), numRounds(DEFAULT_NUM_ROUNDS), 
+    maxSubrs(DEFAULT_MAX_SUBRS) {
+  pool.reserve(nCharstrings);
+  offset.reserve(nCharstrings + 1);
+  offset.push_back(0);
+}
+
+charstring_pool_t::charstring_pool_t(unsigned nCharstrings, int _nrounds,
+                                            unsigned _maxsubrs)
+  : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
+    finalized(false), numRounds(_nrounds), maxSubrs(_maxsubrs) {
   pool.reserve(nCharstrings);
   offset.reserve(nCharstrings + 1);
   offset.push_back(0);
@@ -294,7 +304,7 @@ void charstring_pool_t::writeSubrs(
   // write each subr's representative glyph and offset in that charstring
   uint32_t curIndex = 0;
   for (const substring_t& subr : subrs) {
-    assert(curIndex < MAX_INT);
+    assert(curIndex < maxSubrs);
     index[&subr] = curIndex++;
     uint32_t glyphIdx = rev[subr.getStart()];
     uint32_t glyphOffset = subr.getStart() - offset[glyphIdx];
@@ -359,7 +369,7 @@ void charstring_pool_t::subroutinize(
   std::vector<std::future< std::vector<encoding_list> > > futures;
   std::vector<std::thread> threads;
 
-  for (unsigned runCount = 0; runCount < NUM_ROUNDS; ++runCount) {
+  for (int runCount = 0; runCount < numRounds; ++runCount) {
     /// update market
     for (substring_t& substr : substrings) {
       substr.updatePrice();
@@ -429,28 +439,10 @@ void charstring_pool_t::subroutinize(
       }
     }
 
-    unsigned sum = 0;
-    unsigned max = 0;
-    unsigned nused = 0;
-    for (const substring_t& substr : substrings) {
-      sum += substr.getFreq();
-      if (substr.getFreq() > max)
-        max = substr.getFreq();
-      if (substr.getFreq() > 0)
-        ++nused;
-    }
-    std::cerr << "avg: " << static_cast<float>(sum) / substrings.size() << std::endl;
-    std::cerr << "max: " << max << std::endl;
-    std::cerr << "used: " << nused << std::endl;
-
-    std::cerr << "Round " << runCount + 1 << " Done!" << std::endl;
-
-    std::cerr << substrings.size() << std::endl;
-
     /// cutdown
-    if (runCount <= NUM_ROUNDS - 2) {  // NOTE: python checks for testMode
-      // NOTE: python does trueCost for == NUM_ROUNDS - 2
-      // if (runCount < NUM_ROUNDS - 2) {
+    if (runCount <= numRounds - 2) {  // NOTE: python checks for testMode
+      // NOTE: python does trueCost for == numRounds - 2
+      // if (runCount < numRounds - 2) {
         auto substrIt = substrings.begin();
         for (; substrIt != substrings.end();) {
           if (substrIt->subrSaving(*this) <= 0) {
@@ -470,7 +462,6 @@ void charstring_pool_t::subroutinize(
         }
       // }
     }
-    std::cerr << substrings.size() << std::endl;
   }
 }
 
@@ -908,16 +899,17 @@ std::vector<unsigned char> charstring_pool_t::translateToken(const token_t& tok)
 
 
 
-charstring_pool_t CharstringPoolFactory(std::istream &instream) {
+charstring_pool_t CharstringPoolFactory(
+                          std::istream &instream,
+                          int numRounds,
+                          unsigned maxSubrs) {
   uint16_t count;
   unsigned char countBuffer[2];
   instream.read(reinterpret_cast<char*>(countBuffer), 2);
   count = (countBuffer[0] << 8) | (countBuffer[1]);
-  std::cerr << "count: " << count << std::endl;
 
   unsigned char offSize;
   instream.read(reinterpret_cast<char*>(&offSize), 1);
-  std::cerr << "offSize: " << static_cast<int>(offSize) << std::endl;
 
   uint32_t* offset = reinterpret_cast<uint32_t*>(
                             malloc((count + 1) * sizeof(uint32_t)));
@@ -931,9 +923,8 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
     offset[i] -= 1;  // CFF is 1-indexed(-ish)
   }
   assert(offset[0] == 0);
-  std::cerr << "offset loaded" << std::endl;
 
-  charstring_pool_t csPool(count);
+  charstring_pool_t csPool(count, numRounds, maxSubrs);
 
   unsigned len;
   for (int i = 0; i < count; ++i) {
@@ -944,9 +935,6 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
     free(data);
   }
 
-  std::cerr << "loaded " << offset[count]
-             << " bytes of charstrings" << std::endl;
-
   unsigned char fdCount;
   instream.read(reinterpret_cast<char*>(&fdCount), 1);
   if (fdCount > 1) {
@@ -954,10 +942,8 @@ charstring_pool_t CharstringPoolFactory(std::istream &instream) {
     instream.read(reinterpret_cast<char*>(buf), count);
     csPool.setFDSelect(buf);
     free(buf);
-    std::cerr << "loaded FDSelect" << std::endl;
   } else {
     csPool.setFDSelect(NULL);
-    std::cerr << "no FDSelect loaded" << std::endl;
   }
 
   free(offset);
@@ -984,15 +970,32 @@ void charstring_pool_t::printSuffix(unsigned idx, bool printVal) {
 
 
 int main(int argc, const char* argv[]) {
-  charstring_pool_t csPool = CharstringPoolFactory(std::cin);
+  int numRounds = DEFAULT_NUM_ROUNDS;
+  unsigned maxSubrs = DEFAULT_MAX_SUBRS;
+
+  unsigned argIdx = 1;
+  while (argIdx < static_cast<unsigned>(argc)) {
+    if (strcmp(argv[argIdx], "--nrounds") == 0) {
+      numRounds = atoi(argv[argIdx + 1]);
+      argIdx += 2;
+    } else if (strcmp(argv[argIdx], "--maxsubrs") == 0) {
+      maxSubrs = atoi(argv[argIdx + 1]);
+      argIdx += 2;
+    } else {
+      break;
+    }
+  }
+
+  charstring_pool_t csPool = CharstringPoolFactory(
+                                      std::cin,
+                                      numRounds,
+                                      maxSubrs);
 
   std::list<substring_t> subrs = csPool.getSubstrings();
   std::vector<encoding_list> glyphEncodings;
   csPool.subroutinize(subrs, glyphEncodings);
-  std::cerr << "finished subroutinize()" << std::endl;
 
   csPool.writeSubrs(subrs, glyphEncodings, std::cout);
-  std::cerr << "wrote response" << std::endl;
 
   return 0;
 }

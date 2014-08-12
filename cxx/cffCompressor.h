@@ -148,6 +148,7 @@ std::pair<encoding_list, float> optimizeCharstring(
 class charstring_pool_t {
   public:
     explicit charstring_pool_t(unsigned nCharstrings);
+    charstring_pool_t(unsigned nCharstrings, int numRounds, unsigned maxSubrs);
     void writeSubrs(
                 std::list<substring_t>& substrings,
                 std::vector<encoding_list>& glyphEncodings,
@@ -178,6 +179,8 @@ class charstring_pool_t {
     bool fdSelectTrivial;
     unsigned count;
     bool finalized;
+    int numRounds;
+    unsigned maxSubrs;
 
     inline uint16_t quarkFor(unsigned char* data, unsigned len);
     void addRawToken(unsigned char* data, unsigned len);
@@ -195,6 +198,9 @@ class charstring_pool_t {
               std::ostream& outFile);
 };
 
-charstring_pool_t CharstringPoolFactory(std::istream& instream);
+charstring_pool_t CharstringPoolFactory(
+                        std::istream& instream,
+                        int numRounds,
+                        unsigned maxSubrs);
 
 #endif

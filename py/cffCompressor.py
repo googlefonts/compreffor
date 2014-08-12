@@ -82,25 +82,45 @@ def tokenCost(token):
             return 5
         assert 0
 
-class BaseCandidateSubr(object):
+class CandidateSubr(object):
     """
-    Base CandidateSubr object. Requires further implementation.
+    Records a substring of a charstring that is generally
+    repeated throughout many glyphs.
 
-    Subclasses must implement these methods:
-    usages
-    freq
-    cost
-    value
-    encoding
-
-    And should probably override the following:
-    __eq__
-    __neq__
-    __repr__
+    Instance variables:
+    length -- length of substring
+    location -- tuple of form (glyph_idx, start_pos) where a ref string starts
+    freq -- number of times it appears
+    chstrings -- chstrings from whence this substring came
+    cost_map -- array from simple alphabet -> actual token
     """
 
-    def __init__(self):
-        return NotImplemented
+    __slots__ = ["length", "location", "freq", "chstrings", "cost_map", "_CandidateSubr__cost",
+                 "_adjusted_cost", "_price", "_usages", "_list_idx", "_position", "_encoding",
+                 "_program", "_flatten", "_max_call_depth", "_fdidx", "_global"]
+
+    def __init__(self, length, ref_loc, freq=0, chstrings=None, cost_map=None):
+        self.length = length
+        self.location = ref_loc
+        self.freq = freq
+        self.chstrings = chstrings
+        self.cost_map = cost_map
+
+        self._global = False
+        self._flatten = False
+        self._fdidx = [] # indicates unreached subr
+
+    def __len__(self):
+        """Return the number of tokens in this substring"""
+
+        return self.length
+
+    def value(self):
+        """Returns the actual substring value"""
+
+        assert self.chstrings != None
+
+        return self.chstrings[self.location[0]][self.location[1]:(self.location[1] + self.length)]
 
     def subr_saving(self, use_usages=False, true_cost=False, call_cost=5, subr_overhead=3):
         """
@@ -146,56 +166,6 @@ class BaseCandidateSubr(object):
         cost += sum(-it[1].cost() + call_cost if not it[1]._flatten else it[1].real_cost(call_cost=call_cost)
                     for it in self.encoding())
         return cost
-
-    def __eq__(self, other):
-        if not isinstance(other, BaseCandidateSubr):
-            return NotImplemented
-        return self.value() == other.value()
-
-    def __ne__(self, other):
-        if not isinstance(other, BaseCandidateSubr):
-            return NotImplemented
-        return not(self == other)
-
-class CandidateSubr(BaseCandidateSubr):
-    """
-    Records a substring of a charstring that is generally
-    repeated throughout many glyphs.
-
-    Instance variables:
-    length -- length of substring
-    location -- tuple of form (glyph_idx, start_pos) where a ref string starts
-    freq -- number of times it appears
-    chstrings -- chstrings from whence this substring came
-    cost_map -- array from simple alphabet -> actual token
-    """
-
-    __slots__ = ["length", "location", "freq", "chstrings", "cost_map", "_CandidateSubr__cost",
-                 "_adjusted_cost", "_price", "_usages", "_list_idx", "_position", "_encoding",
-                 "_program", "_flatten", "_max_call_depth", "_fdidx", "_global"]
-
-    def __init__(self, length, ref_loc, freq=0, chstrings=None, cost_map=None):
-        self.length = length
-        self.location = ref_loc
-        self.freq = freq
-        self.chstrings = chstrings
-        self.cost_map = cost_map
-
-        self._global = False
-        self._flatten = False
-        self._fdidx = [] # indicates unreached subr
-
-    def __len__(self):
-        """Return the number of tokens in this substring"""
-
-        return self.length
-
-    def value(self):
-        """Returns the actual substring value"""
-
-        assert self.chstrings != None
-
-        return self.chstrings[self.location[0]][self.location[1]:(self.location[1] + self.length)]
 
     def cost(self):
         """Return the size (in bytes) that the bytecode for this takes up"""
@@ -757,9 +727,9 @@ class Compreffor(object):
                 for it in encoding:
                     mark_reachable(it[1], 0)
 
-        subrs = [s for s in substrings if s.usages() > 0 and bool(s._fdidx) and s.subr_saving(use_usages=True, true_cost=True) > 0]
+        subrs = [s for s in substrings if s.usages() > 0 and hasattr(s, '_fdidx') and  bool(s._fdidx) and s.subr_saving(use_usages=True, true_cost=True) > 0]
 
-        bad_substrings = [s for s in substrings if s.usages() == 0 or not bool(s._fdidx) or s.subr_saving(use_usages=True, true_cost=True) <= 0]
+        bad_substrings = [s for s in substrings if s.usages() == 0 or not hasattr(s, '_fdidx') or not bool(s._fdidx) or s.subr_saving(use_usages=True, true_cost=True) <= 0]
         if verbose:
             print("%d substrings unused or negative saving subrs" % len(bad_substrings))
 

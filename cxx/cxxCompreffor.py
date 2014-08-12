@@ -1,11 +1,18 @@
 #!/usr/bin/env python
 
+"""
+This file is a bootstrap for the C++ edition of the FontTools compreffor.
+It prepares the input data for the executable and reads back in the results,
+applying them to the input font.
+"""
+
 import StringIO
 import argparse
 import array
 import struct
 import subprocess
 import sys
+import time
 import os
 from fontTools.ttLib import TTFont
 
@@ -15,8 +22,8 @@ NSUBRS_LIMIT = 65533
 SUBR_NEST_LIMIT  = 10
 
 class IdKeyMap(object):
-        def __getitem__(self, tok):
-            return tok
+    def __getitem__(self, tok):
+        return tok
 
 class SimpleCandidateSubr(CandidateSubr):
     def __init__(self, length, ref_loc):
@@ -85,7 +92,6 @@ def read_data(td, result_string):
         enc, num_read = get_encoding(results[pos:], subrs)
         pos += num_read
         subrs[i]._encoding = enc
-    print("PYTHON>>> %d subrs read" % num_subrs)
 
     # process glyph encodings
     glyph_encodings = []
@@ -97,17 +103,43 @@ def read_data(td, result_string):
     assert pos == len(results)
     return (subrs, glyph_encodings)
 
-def compreff(font):
+def compreff(font, verbose=False, **kwargs):
+    start_time = time.time()
+
+    assert len(font['CFF '].cff.topDictIndex) == 1
+
     td = font['CFF '].cff.topDictIndex[0]
-    print("PYTHON>>> # of charstrings == %d" % len(td.CharStrings))
+
+    call = [os.path.join(os.path.dirname(__file__), 'cffCompressor')]
+
+    if 'nrounds' in kwargs and kwargs.get('nrounds') != None:
+        call.extend(['--nrounds', str(kwargs.get('nrounds'))])
+
+    max_subrs = NSUBRS_LIMIT
+    if 'nsubrs_limit' in kwargs and kwargs.get('nsubrs_limit') != None:
+        max_subrs = kwargs.get('nsubrs_limit')
+        call.extend(['--maxsubrs', str(max_subrs)])
+
+    if verbose:
+        print("Sending data to executable (%gs)" % (time.time() - start_time))
+        start_time = time.time()
 
     p = subprocess.Popen(
-                        [os.path.join(os.path.dirname(__file__), 'cffCompressor')],
+                        call,
                         stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE)
     input_data = write_data(td)
     results, _ = p.communicate(input=input_data)
+
+    if verbose:
+        print("Executable returned (delta %gs)" % (time.time() - start_time))
+        start_time = time.time()
+
     subrs, glyph_encodings = read_data(td, results)
+
+    if verbose:
+        print("Extracted results (delta %gs)" % (time.time() - start_time))
+        start_time = time.time()
 
     for cs in td.CharStrings.values():
         cs.decompile()
@@ -133,7 +165,7 @@ def compreff(font):
                             fdselect,
                             subrs,
                             IdKeyMap(),
-                            NSUBRS_LIMIT,
+                            max_subrs,
                             SUBR_NEST_LIMIT)
 
     encoding = dict(zip(td.charset, glyph_encodings))
@@ -141,7 +173,7 @@ def compreff(font):
     Compreffor.apply_subrs(td, encoding, gsubrs, lsubrs)
 
 def main(filename=None, comp_fname=None, test=False, decompress=False,
-         verbose=False, check=False, comp_func=None, **comp_kwargs):
+         verbose=False, check=False, generate_cff=False, **comp_kwargs):
     if test:
         pass
 
@@ -157,17 +189,16 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
             subsetter.populate(glyphs=font.getGlyphOrder())
             subsetter.subset(font)
 
-        if verbose:
-            print("Compressing font through iterative_encode:")
         out_name = "%s.compressed%s" % os.path.splitext(filename)
 
-        compreff(font)
+        compreff(font, verbose=verbose, **comp_kwargs)
 
         # save compressed font
         font.save(out_name)
 
-        # save CFF version
-        font['CFF '].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], 'w'), None)
+        if generate_cff:
+            # save CFF version
+            font['CFF '].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], 'w'), None)
 
         comp_size = os.path.getsize(out_name)
         print("Compressed to %s -- saved %s" % 
@@ -190,30 +221,30 @@ if __name__ == '__main__':
                                        repeated routines and generate subroutines
                                        to minimize the disk space needed to
                                        represent a font.""")
-    parser.add_argument("filename", help="the path to the font file", nargs="?")
-    parser.add_argument("comp_fname", nargs="?", metavar="compressed-file",
+    parser.add_argument('filename', help="the path to the font file", nargs='?')
+    parser.add_argument('comp_fname', nargs='?', metavar='compressed-file',
                         help="the path to the compressed file. if this is given"
                              " with the -c flag, it will be checked against "
                              " `filename`.")
-    # parser.add_argument("-t", "--test", required=False, action="store_true",
+    # parser.add_argument('-t', '--test', required=False, action='store_true',
     #                     default=False, help="run test cases")
-    # parser.add_argument("-s", "--status", required=False, action="store_true",
-    #                     dest="print_status", default=False)
-    # parser.add_argument("-v", "--verbose", required=False, action="store_true",
-    #                     dest="verbose", default=False)
-    parser.add_argument("-c", "--check", required=False, action="store_true",
+    parser.add_argument('-v', '--verbose', required=False, action='store_true',
+                        dest='verbose', default=False)
+    parser.add_argument('-c', '--check', required=False, action='store_true',
                         help="verify that the outputted font is valid and "
                              "functionally equivalent to the input")
-    parser.add_argument("-d", "--decompress", required=False, action="store_true",
+    parser.add_argument('-d', '--decompress', required=False, action='store_true',
                         help="decompress source before compressing (necessary if "
                              "there are subroutines in the source)")
-    # parser.add_argument("-n", "--nrounds", required=False, type=int,
-    #                     help="the number of iterations to run the algorithm"
-    #                          " (defaults to 4)")
-    # parser.add_argument("-m", "--maxsubrs", required=False, type=int,
-    #                     dest="nsubrs_limit", help="limit to the number of "
-    #                                               " subroutines per INDEX"
-    #                                               " (defaults to 64K)")
+    parser.add_argument('-n', '--nrounds', required=False, type=int,
+                        help="the number of iterations to run the algorithm"
+                             " (defaults to 4)")
+    parser.add_argument('-m', '--maxsubrs', required=False, type=int,
+                        dest='nsubrs_limit', help="limit to the number of "
+                                                  " subroutines per INDEX"
+                                                  " (defaults to 64K)")
+    parser.add_argument('--generatecff', required=False, action='store_true',
+                        dest='generate_cff', default=False)
 
     kwargs = vars(parser.parse_args())
 
