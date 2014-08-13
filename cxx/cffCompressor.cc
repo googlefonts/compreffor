@@ -906,8 +906,8 @@ charstring_pool_t CharstringPoolFactory(
   unsigned char offSize;
   instream.read(reinterpret_cast<char*>(&offSize), 1);
 
-  uint32_t* offset = reinterpret_cast<uint32_t*>(
-                            malloc((count + 1) * sizeof(uint32_t)));
+  uint32_t* offset = new uint32_t[count + 1];
+
   unsigned char offsetBuffer[(count + 1) * offSize];
   instream.read(reinterpret_cast<char*>(offsetBuffer), (count + 1) * offSize);
   for (int i = 0; i < count + 1; ++i) {
@@ -924,24 +924,24 @@ charstring_pool_t CharstringPoolFactory(
   unsigned len;
   for (int i = 0; i < count; ++i) {
     unsigned len = offset[i + 1] - offset[i];
-    char* data = reinterpret_cast<char*>(malloc(len));
+    char* data = new char[len];
     instream.read(data, len);
     csPool.addRawCharstring(data, len);
-    free(data);
+    delete[] data;
   }
 
   unsigned char fdCount;
   instream.read(reinterpret_cast<char*>(&fdCount), 1);
   if (fdCount > 1) {
-    unsigned char* buf = (unsigned char*) malloc(count);
+    unsigned char* buf = new unsigned char[count];
     instream.read(reinterpret_cast<char*>(buf), count);
     csPool.setFDSelect(buf);
-    free(buf);
+    delete[] buf;
   } else {
     csPool.setFDSelect(NULL);
   }
 
-  free(offset);
+  delete[] offset;
   csPool.finalize();
 
   return csPool;
