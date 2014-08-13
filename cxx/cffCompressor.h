@@ -160,7 +160,7 @@ class charstring_pool_t {
     std::list<substring_t> getSubstrings();
     charstring_t getCharstring(unsigned idx);
     void addRawCharstring(char* data, unsigned len);
-    void setFDSelect(unsigned char* rawFD);
+    void setFDSelect(uint8_t* rawFD);
     void finalize();
     const_tokiter_t get(unsigned idx) const;
     std::vector<unsigned char> translateToken(const token_t& tok) const;
@@ -174,7 +174,7 @@ class charstring_pool_t {
     std::vector<std::string> revQuark;
     std::vector<token_t> pool;
     std::vector<unsigned> offset;
-    std::vector<unsigned char> fdSelect;
+    std::vector<uint8_t> fdSelect;
     std::vector<unsigned> rev;
     bool fdSelectTrivial;
     unsigned count;

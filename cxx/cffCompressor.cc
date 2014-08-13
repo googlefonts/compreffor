@@ -662,7 +662,7 @@ void charstring_pool_t::addRawCharstring(char* data, unsigned len) {
   offset.push_back(offset.back() + nToks);
 }
 
-void charstring_pool_t::setFDSelect(unsigned char* rawFD) {
+void charstring_pool_t::setFDSelect(uint8_t* rawFD) {
   if (rawFD == NULL) {
     fdSelectTrivial = true;
   } else {
@@ -933,7 +933,7 @@ charstring_pool_t CharstringPoolFactory(
   unsigned char fdCount;
   instream.read(reinterpret_cast<char*>(&fdCount), 1);
   if (fdCount > 1) {
-    unsigned char* buf = new unsigned char[count];
+    uint8_t* buf = new uint8_t[count];
     instream.read(reinterpret_cast<char*>(buf), count);
     csPool.setFDSelect(buf);
     delete[] buf;
