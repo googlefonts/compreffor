@@ -17,6 +17,7 @@ import os
 from fontTools.ttLib import TTFont
 
 from cffCompressor import Compreffor, CandidateSubr, tokenCost, human_size
+from testCffCompressor import test_compression_integrity, test_call_depth
 
 NSUBRS_LIMIT = 65533
 SUBR_NEST_LIMIT  = 10
@@ -218,6 +219,10 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
             print("Compressed to %s -- saved %s" %
                     (os.path.basename(out_name), human_size(orig_size - comp_size)))
 
+            if check:
+                test_compression_integrity(filename, out_name)
+                test_call_depth(out_name)
+
         if recursive:
             for root, dirs, files in os.walk(filename):
                 for fname in files:
@@ -226,15 +231,9 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
         else:
             handle_font(filename)
 
-    if check:
-        from testCffCompressor import test_compression_integrity, test_call_depth
-
-        if comp_fname == None:
-            test_compression_integrity(filename, out_name)
-            test_call_depth(out_name)
-        else:
-            test_compression_integrity(filename, comp_fname)
-            test_call_depth(comp_fname)
+    if check and comp_fname != None:
+        test_compression_integrity(filename, comp_fname)
+        test_call_depth(comp_fname)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
