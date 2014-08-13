@@ -254,7 +254,7 @@ inline void substring_t::setPrice(float newPrice) {
 // charstring_pool_t ==========
 charstring_pool_t::charstring_pool_t(unsigned nCharstrings)
   : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
-    finalized(false), numRounds(DEFAULT_NUM_ROUNDS), 
+    finalized(false), numRounds(DEFAULT_NUM_ROUNDS),
     maxSubrs(DEFAULT_MAX_SUBRS) {
   pool.reserve(nCharstrings);
   offset.reserve(nCharstrings + 1);
