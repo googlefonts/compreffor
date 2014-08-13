@@ -441,26 +441,22 @@ void charstring_pool_t::subroutinize(
 
     /// cutdown
     if (runCount <= numRounds - 2) {  // NOTE: python checks for testMode
-      // NOTE: python does trueCost for == numRounds - 2
-      // if (runCount < numRounds - 2) {
-        auto substrIt = substrings.begin();
-        for (; substrIt != substrings.end();) {
-          if (substrIt->subrSaving(*this) <= 0) {
-          // if (substrIt->getFreq() <= 1) { // potential alternative to above?
-            light_substring_t key(substrIt->begin(*this), substrIt->end(*this));
-            size_t response = substrMap.erase(key);
-            // heuristic:
-            for (encoding_list::iterator encItem = substrIt->encoding.begin();
-                    encItem != substrIt->encoding.end(); ++encItem) {
-              encItem->substr->increaseFreq(substrIt->getFreq() - 1);
-            }
-
-            substrIt = substrings.erase(substrIt);
-          } else {
-            ++substrIt;
+      auto substrIt = substrings.begin();
+      for (; substrIt != substrings.end();) {
+        if (substrIt->subrSaving(*this) <= 0) {
+          light_substring_t key(substrIt->begin(*this), substrIt->end(*this));
+          size_t response = substrMap.erase(key);
+          // heuristic:
+          for (encoding_list::iterator encItem = substrIt->encoding.begin();
+                  encItem != substrIt->encoding.end(); ++encItem) {
+            encItem->substr->increaseFreq(substrIt->getFreq() - 1);
           }
+
+          substrIt = substrings.erase(substrIt);
+        } else {
+          ++substrIt;
         }
-      // }
+      }
     }
   }
 }
