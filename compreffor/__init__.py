@@ -18,7 +18,7 @@ class Compreffor(object):
         self.exe_path = os.path.join(os.path.dirname(__file__), "cffCompressor")
         self.lib_path = os.path.join(os.path.dirname(__file__), "libcompreff.so")
 
-    def compreff(self):
+    def compress(self):
         if self.method == Methods.NoPref:
             # choose fastest available method
             if os.path.exists(self.exe_path):
