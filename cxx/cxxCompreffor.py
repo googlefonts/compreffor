@@ -9,6 +9,7 @@ applying them to the input font.
 import StringIO
 import argparse
 import array
+import ctypes
 import struct
 import subprocess
 import sys
@@ -144,7 +145,7 @@ def interpret_data(td, results):
 
     return (subrs, glyph_encodings)
 
-def compreff(font, verbose=False, **kwargs):
+def compreff(font, verbose=False, use_lib=False, **kwargs):
     full_start_time = start_time = time.time()
 
     assert len(font['CFF '].cff.topDictIndex) == 1
@@ -165,18 +166,26 @@ def compreff(font, verbose=False, **kwargs):
         print("Sending data to executable (%gs)" % (time.time() - start_time))
         start_time = time.time()
 
-    p = subprocess.Popen(
-                        call,
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE)
-    input_data = write_data(td)
-    results, _ = p.communicate(input=input_data)
-
-    if verbose:
-        print("Executable returned (delta %gs)" % (time.time() - start_time))
-        start_time = time.time()
-
-    subrs, glyph_encodings = read_data(td, results)
+    if use_lib:
+        libcompreff = ctypes.CDLL("/usr/local/google/home/sfishman/Documents/projects/compreffor/cxx/libcompreff.so")
+        libcompreff.compreff.restype = ctypes.POINTER(ctypes.c_uint32)
+        input_data = ctypes.c_char_p(write_data(td))
+        results = libcompreff.compreff(input_data, 4, ctypes.c_uint(max_subrs))
+        if verbose:
+            print("Lib call returned (delta %gs)" % (time.time() - start_time))
+            start_time = time.time()
+        subrs, glyph_encodings = interpret_data(td, results)
+    else:
+        p = subprocess.Popen(
+                            call,
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE)
+        input_data = write_data(td)
+        results, _ = p.communicate(input=input_data)
+        if verbose:
+            print("Executable returned (delta %gs)" % (time.time() - start_time))
+            start_time = time.time()
+        subrs, glyph_encodings = read_data(td, results)
 
     if verbose:
         print("Extracted results (delta %gs)" % (time.time() - start_time))
@@ -308,6 +317,8 @@ if __name__ == '__main__':
                                                   " (defaults to 64K)")
     parser.add_argument('--generatecff', required=False, action='store_true',
                         dest='generate_cff', default=False)
+    parser.add_argument('--uselib', required=False, action='store_true',
+                        dest='use_lib', default=False)
 
     kwargs = vars(parser.parse_args())
 
