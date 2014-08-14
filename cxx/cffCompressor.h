@@ -159,7 +159,7 @@ class charstring_pool_t {
                 std::vector<encoding_list>& glyphEncodings);
     std::list<substring_t> getSubstrings();
     charstring_t getCharstring(unsigned idx);
-    void addRawCharstring(char* data, unsigned len);
+    void addRawCharstring(unsigned char* data, unsigned len);
     void setFDSelect(uint8_t* rawFD);
     void finalize();
     const_tokiter_t get(unsigned idx) const;

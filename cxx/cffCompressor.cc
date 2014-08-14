@@ -580,7 +580,7 @@ charstring_t charstring_pool_t::getCharstring(unsigned idx) {
   return cs;
 }
 
-void charstring_pool_t::addRawCharstring(char* data, unsigned len) {
+void charstring_pool_t::addRawCharstring(unsigned char* data, unsigned len) {
   assert(!finalized);
 
   uint32_t numHints = 0;
@@ -926,7 +926,7 @@ charstring_pool_t CharstringPoolFactory(
     unsigned len = offset[i + 1] - offset[i];
     char* data = new char[len];
     instream.read(data, len);
-    csPool.addRawCharstring(data, len);
+    csPool.addRawCharstring(reinterpret_cast<unsigned char*>(data), len);
     delete[] data;
   }
 
