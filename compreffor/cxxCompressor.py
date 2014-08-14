@@ -17,8 +17,8 @@ import time
 import os
 from fontTools.ttLib import TTFont
 
-from cffCompressor import Compreffor, CandidateSubr, tokenCost, human_size
-from testCffCompressor import test_compression_integrity, test_call_depth
+from pyCompressor import Compreffor, CandidateSubr, tokenCost, human_size
+from testPyCompressor import test_compression_integrity, test_call_depth
 
 NSUBRS_LIMIT = 65533
 SUBR_NEST_LIMIT  = 10
@@ -167,7 +167,7 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
         start_time = time.time()
 
     if use_lib:
-        libcompreff = ctypes.CDLL("/usr/local/google/home/sfishman/Documents/projects/compreffor/cxx/libcompreff.so")
+        libcompreff = ctypes.CDLL("./libcompreff.so")
         libcompreff.compreff.restype = ctypes.POINTER(ctypes.c_uint32)
         input_data = ctypes.c_char_p(write_data(td))
         results = libcompreff.compreff(input_data, 4, ctypes.c_uint(max_subrs))

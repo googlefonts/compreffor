@@ -4,7 +4,7 @@
 Tool to subroutinize a CFF OpenType font.
 
 Usage (on command line):
->>> ./cffCompressor.py /path/to/font.otf
+>>> ./pyCompressor.py /path/to/font.otf
 # font written to /path/to/font.compressed.otf
 
 Usage (in Python):
@@ -1006,10 +1006,10 @@ def human_size(num):
 def main(filename=None, comp_fname=None, test=False, decompress=False,
          verbose=False, check=False, generate_cff=False, recursive=False,
          **comp_kwargs):
-    from testCffCompressor import test_compression_integrity, test_call_depth
+    from testPyCompressor import test_compression_integrity, test_call_depth
 
     if test:
-        from testCffCompressor import TestCffCompressor
+        from testPyCompressor import TestCffCompressor
         test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
         unittest.TextTestRunner().run(test_suite)
 

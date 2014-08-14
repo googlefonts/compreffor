@@ -13,7 +13,7 @@ import subprocess
 import sys
 from fontTools.ttLib import TTFont
 
-from cxxCompreffor import write_data
+from compreffor.cxxCompressor import write_data
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:

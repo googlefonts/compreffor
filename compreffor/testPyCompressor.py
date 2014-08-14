@@ -1,5 +1,5 @@
 import unittest, random, sys
-import cffCompressor
+import pyCompressor
 from fontTools.ttLib import TTFont
 from testDummy import DummyGlyphSet
 
@@ -7,24 +7,24 @@ class TestCffCompressor(unittest.TestCase):
 
     def setUp(self):
         self.glyph_set = DummyGlyphSet({'a': (0, 1, 20, 21, 22, 2), 'b': (7, 0, 1, 20, 21, 22, 2), 'c': (0, 1, 20, 21, 22, 9, 3, 17)})
-        self.sf = cffCompressor.SubstringFinder(self.glyph_set)
+        self.sf = pyCompressor.SubstringFinder(self.glyph_set)
 
-        self.short_sf = cffCompressor.SubstringFinder(DummyGlyphSet({'a': (1, 2, 3), 'b': (8, 1, 4)}))
+        self.short_sf = pyCompressor.SubstringFinder(DummyGlyphSet({'a': (1, 2, 3), 'b': (8, 1, 4)}))
 
         self.rand_gs = DummyGlyphSet()
         num_glyphs = random.randint(5, 20)
         for i in range(num_glyphs):
             length = random.randint(2, 30)
             self.rand_gs[i] = tuple(random.randint(0, 100) for _ in range(length))
-        self.random_sf = cffCompressor.SubstringFinder(DummyGlyphSet(self.rand_gs))
+        self.random_sf = pyCompressor.SubstringFinder(DummyGlyphSet(self.rand_gs))
 
         length = 3
         locations = [(0, 0), (1, 4)]
         charstrings = [(348, 374, 'rmoveto', 'endchar'), (123, -206, -140, 'hlineto', 348, 374, 'rmoveto', 'endchar')]
 
-        self.cand_subr = cffCompressor.CandidateSubr(length, locations[0], 2, charstrings)
+        self.cand_subr = pyCompressor.CandidateSubr(length, locations[0], 2, charstrings)
 
-        self.empty_compreffor = cffCompressor.Compreffor(None, test_mode=True)
+        self.empty_compreffor = pyCompressor.Compreffor(None, test_mode=True)
 
     def test_iterative_encode(self):
         """Test iterative_encode function"""
@@ -92,7 +92,7 @@ class TestCffCompressor(unittest.TestCase):
     def test_human_size(self):
         """Test the human_size function for various numbers of bytes"""
 
-        human_size = cffCompressor.human_size
+        human_size = pyCompressor.human_size
 
         self.assertEqual(human_size(2), "2.0 bytes")
         self.assertEqual(human_size(2050), "2.0 KB")
@@ -103,7 +103,7 @@ class TestCffCompressor(unittest.TestCase):
         """Test update_program with only one replacement"""
 
         program = [7, 2, 10, 4, 8, 7, 0]
-        substr = cffCompressor.CandidateSubr(3, (0, 1))
+        substr = pyCompressor.CandidateSubr(3, (0, 1))
         substr._position = 5
         substr._fdidx = [0]
         substr._global = False
@@ -118,7 +118,7 @@ class TestCffCompressor(unittest.TestCase):
         """Test update_program with only one replacement"""
 
         program = [7, 2, 10, 4, 8, 7, 0]
-        substr = cffCompressor.CandidateSubr(3, (0, 1))
+        substr = pyCompressor.CandidateSubr(3, (0, 1))
         substr._position = 5
         substr._fdidx = [0]
         substr._global = True
@@ -133,10 +133,10 @@ class TestCffCompressor(unittest.TestCase):
         """Test update_program with two replacements"""
 
         program = [7, 2, 10, 4, 8, 7, 0]
-        substr = cffCompressor.CandidateSubr(3, (0, 1))
+        substr = pyCompressor.CandidateSubr(3, (0, 1))
         substr._position = 5
         substr._global = True
-        substr2 = cffCompressor.CandidateSubr(2, (0, 5))
+        substr2 = pyCompressor.CandidateSubr(2, (0, 5))
         substr2._position = 21
         substr2._global = True
         encoding = [(1, substr), (5, substr2)]
@@ -210,7 +210,7 @@ class TestCffCompressor(unittest.TestCase):
     def test_tokenCost(self):
         """Make sure single tokens can have their cost calculated"""
 
-        tokenCost = cffCompressor.tokenCost
+        tokenCost = pyCompressor.tokenCost
 
         self.assertEqual(tokenCost('hlineto'), 1)
         self.assertEqual(tokenCost('flex'), 2)

@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 import argparse
-import cffCompressor
+from compreffor import pyCompressor
 
-class SimpleSubstringFinder(cffCompressor.SubstringFinder):
+class SimpleSubstringFinder(pyCompressor.SubstringFinder):
     def get_substrings(self, min_freq=2, check_positive=True, sort_by_length=False):
         movetos = set()
         for idx, tok in enumerate(self.rev_keymap):
@@ -26,7 +26,7 @@ class SimpleSubstringFinder(cffCompressor.SubstringFinder):
                         if program[cur_start:stop] in matches:
                             matches[program[cur_start:stop]].freq += 1
                         else:
-                            span = cffCompressor.CandidateSubr(stop - cur_start,
+                            span = pyCompressor.CandidateSubr(stop - cur_start,
                                                                (glyph_idx, cur_start),
                                                                1,
                                                                self.data,
@@ -59,5 +59,5 @@ if __name__ == '__main__':
 
     kwargs = vars(parser.parse_args())
 
-    cffCompressor.SubstringFinder = SimpleSubstringFinder
-    cffCompressor.main(**kwargs)
+    pyCompressor.SubstringFinder = SimpleSubstringFinder
+    pyCompressor.main(**kwargs)

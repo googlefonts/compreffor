@@ -7,8 +7,7 @@ import time
 import numpy as np
 from subprocess import call
 
-# COMMAND_TEMPLATE = "python cffCompressor.py /usr/local/google/home/sfishman/Documents/logotype.otf --chunkratio %f"
-COMMAND_TEMPLATE = "python cffCompressor.py /usr/local/google/home/sfishman/Documents/KiloGram-decompress.otf --chunkratio %f"
+COMMAND_TEMPLATE = "python ../compreffor/pyCompressor.py /path/to/font.otf --chunkratio %f"
 
 def time_run(value):
     command = COMMAND_TEMPLATE % value
