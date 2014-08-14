@@ -104,6 +104,46 @@ def read_data(td, result_string):
     assert pos == len(results)
     return (subrs, glyph_encodings)
 
+def interpret_data(td, results):
+    class MutableSpace: pass
+    MutableSpace.pos = 0
+    def pop_result():
+        ans = results[MutableSpace.pos]
+        MutableSpace.pos += 1
+        return ans
+
+    num_subrs = pop_result()
+
+    # process subrs
+    subrs = []
+    for i in range(num_subrs):
+        glyph_idx = pop_result()
+        tok_idx = pop_result()
+        subr_len = pop_result()
+        subrs.append(SimpleCandidateSubr(subr_len, (glyph_idx, tok_idx)))
+
+    def pop_encoding():
+        num_calls = pop_result()
+        enc = []
+        for j in range(num_calls):
+            insertion_pos = pop_result()
+            subr_index = pop_result()
+            subrs[subr_index].freq += 1
+            enc.append((insertion_pos, subrs[subr_index]))
+        return enc
+
+    for i in range(num_subrs):
+        enc = pop_encoding()
+        subrs[i]._encoding = enc
+
+    # process glyph encodings
+    glyph_encodings = []
+    for i in range(len(td.CharStrings)):
+        enc = pop_encoding()
+        glyph_encodings.append(enc)
+
+    return (subrs, glyph_encodings)
+
 def compreff(font, verbose=False, **kwargs):
     full_start_time = start_time = time.time()
 
