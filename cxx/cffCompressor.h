@@ -153,6 +153,9 @@ class charstring_pool_t {
                 std::list<substring_t>& substrings,
                 std::vector<encoding_list>& glyphEncodings,
                 std::ostream& outFile);
+    uint32_t* getResponse(
+                std::list<substring_t>& substrings,
+                std::vector<encoding_list>& glyphEncodings);
     std::vector<unsigned char> formatInt(int num);
     void subroutinize(
                 std::list<substring_t>& substrings,
@@ -196,11 +199,23 @@ class charstring_pool_t {
               const encoding_list& enc,
               const std::map<const substring_t*, uint16_t>& index,
               std::ostream& outFile);
+    unsigned packEncoding(
+              const encoding_list& enc,
+              const std::map<const substring_t*, uint16_t>& index,
+              uint32_t* buffer);
 };
 
 charstring_pool_t CharstringPoolFactory(
                         std::istream& instream,
                         int numRounds,
                         unsigned maxSubrs);
+
+charstring_pool_t CharstringPoolFactoryFromString(
+                        unsigned char* buffer,
+                        int numRounds,
+                        unsigned maxSubrs);
+
+extern "C" uint32_t* compreff(unsigned char* dataStream, int numRounds, unsigned maxSubrs);
+extern "C" void unload(char* response);
 
 #endif

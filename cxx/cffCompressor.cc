@@ -325,6 +325,74 @@ void charstring_pool_t::writeSubrs(
   }
 }
 
+unsigned charstring_pool_t::packEncoding(
+                            const encoding_list& enc,
+                            const std::map<const substring_t*, uint16_t>& index,
+                            uint32_t* buffer) {
+  unsigned pos = 0;
+
+  // write the number of subrs called
+  buffer[pos++] = enc.size();
+  // write each call
+  for (const encoding_item& enc_item : enc) {
+    buffer[pos++] = enc_item.pos;
+    auto it = index.find(enc_item.substr);
+    assert(it != index.end());
+    uint32_t subrIndex = it->second;
+    buffer[pos++] = subrIndex;
+  }
+
+  return pos;
+}
+
+uint32_t* charstring_pool_t::getResponse(
+              std::list<substring_t>& subrs,
+              std::vector<encoding_list>& glyphEncodings) {
+  unsigned length = 1 + subrs.size() * 3;
+  for (const substring_t& subr : subrs) {
+    length += 1 + subr.encoding.size() * 2;
+  }
+  for (const encoding_list& glyphEnc : glyphEncodings) {
+    length += 1 + glyphEnc.size() * 2;
+  }
+
+  uint32_t* buffer = new uint32_t[length];
+  unsigned pos = 0;
+
+  /// write subrs
+  // write number of subrs
+  uint32_t numSubrs = (uint32_t) subrs.size();
+  buffer[pos++] = numSubrs;
+
+  // number subrs
+  std::map<const substring_t*, uint16_t> index;
+
+  // write each subr's representative glyph and offset in that charstring
+  uint32_t curIndex = 0;
+  for (const substring_t& subr : subrs) {
+    assert(curIndex < maxSubrs);
+    index[&subr] = curIndex++;
+    uint32_t glyphIdx = rev[subr.getStart()];
+    uint32_t glyphOffset = subr.getStart() - offset[glyphIdx];
+    uint32_t subrLength = subr.size();
+    buffer[pos++] = glyphIdx;
+    buffer[pos++] = glyphOffset;
+    buffer[pos++] = subrLength;
+  }
+
+  // after producing `index`, write subr encodings
+  for (const substring_t& subr : subrs) {
+    pos += packEncoding(subr.encoding, index, buffer + pos);
+  }
+
+  /// write glyph encoding instructions
+  for (const encoding_list& glyphEnc : glyphEncodings) {
+    pos += packEncoding(glyphEnc, index, buffer + pos);
+  }
+
+  return buffer;
+}
+
 std::vector<unsigned char> charstring_pool_t::formatInt(int num) {
   std::vector<unsigned char> ret;
   if (num >= -107 && num <= 107) {
@@ -963,6 +1031,67 @@ void charstring_pool_t::printSuffix(unsigned idx, bool printVal) {
   std::cerr << "]" << std::endl;
 }
 
+charstring_pool_t CharstringPoolFactoryFromString(
+                          unsigned char* buffer,
+                          int numRounds,
+                          unsigned maxSubrs) {
+  unsigned pos = 0;
+
+  uint16_t count;
+  count = (buffer[pos] << 8) | (buffer[pos + 1]);
+  pos += 2;
+
+  unsigned char offSize = buffer[pos++];
+
+  uint32_t* offset = new uint32_t[count + 1];
+
+  unsigned char* offsetBuffer = &buffer[pos];
+  pos += (count + 1) * offSize;
+  for (int i = 0; i < count + 1; ++i) {
+    offset[i] = 0;
+    for (int j = 0; j < offSize; ++j) {
+      offset[i] += offsetBuffer[i * offSize + j] << ((offSize - j - 1) * 8);
+    }
+    offset[i] -= 1;  // CFF is 1-indexed(-ish)
+  }
+  assert(offset[0] == 0);
+
+  charstring_pool_t csPool(count, numRounds, maxSubrs);
+
+  unsigned len;
+  for (int i = 0; i < count; ++i) {
+    unsigned len = offset[i + 1] - offset[i];
+    csPool.addRawCharstring(buffer + pos, len);
+    pos += len;
+  }
+
+  unsigned char fdCount = buffer[pos++];
+  if (fdCount > 1) {
+    csPool.setFDSelect(buffer + pos);
+    pos += count;
+  } else {
+    csPool.setFDSelect(NULL);
+  }
+
+  delete[] offset;
+  csPool.finalize();
+
+  return csPool;
+}
+
+extern "C" uint32_t* compreff(unsigned char* dataStream, int numRounds, unsigned maxSubrs) {
+  charstring_pool_t csPool = CharstringPoolFactoryFromString(dataStream,
+                                                             numRounds,
+                                                             maxSubrs);
+  std::list<substring_t> subrs = csPool.getSubstrings();
+  std::vector<encoding_list> glyphEncodings;
+  csPool.subroutinize(subrs, glyphEncodings);
+  return csPool.getResponse(subrs, glyphEncodings);
+}
+
+extern "C" void unload(char* response) {
+  free(response);
+}
 
 int main(int argc, const char* argv[]) {
   int numRounds = DEFAULT_NUM_ROUNDS;
