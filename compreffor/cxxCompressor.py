@@ -152,7 +152,7 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
 
     td = font['CFF '].cff.topDictIndex[0]
 
-    call = [os.path.join(os.path.dirname(__file__), 'cffCompressor')]
+    call = [os.path.join(os.path.dirname(__file__), "cffCompressor")]
 
     if 'nrounds' in kwargs and kwargs.get('nrounds') != None:
         call.extend(['--nrounds', str(kwargs.get('nrounds'))])
@@ -167,7 +167,8 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
         start_time = time.time()
 
     if use_lib:
-        libcompreff = ctypes.CDLL("./libcompreff.so")
+        lib_path = os.path.join(os.path.dirname(__file__), "libcompreff.so")
+        libcompreff = ctypes.CDLL(lib_path)
         libcompreff.compreff.restype = ctypes.POINTER(ctypes.c_uint32)
         input_data = ctypes.c_char_p(write_data(td))
         results = libcompreff.compreff(input_data, 4, ctypes.c_uint(max_subrs))
