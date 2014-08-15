@@ -152,6 +152,10 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
 
     td = font['CFF '].cff.topDictIndex[0]
 
+    if verbose:
+        print("Preparing external call...")
+        start_time = time.time()
+
     call = [os.path.join(os.path.dirname(__file__), "cffCompressor")]
 
     if 'nrounds' in kwargs and kwargs.get('nrounds') != None:
@@ -162,15 +166,14 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
         max_subrs = kwargs.get('nsubrs_limit')
         call.extend(['--maxsubrs', str(max_subrs)])
 
-    if verbose:
-        print("Sending data to executable (%gs)" % (time.time() - start_time))
-        start_time = time.time()
-
     if use_lib:
         lib_path = os.path.join(os.path.dirname(__file__), "libcompreff.so")
         libcompreff = ctypes.CDLL(lib_path)
         libcompreff.compreff.restype = ctypes.POINTER(ctypes.c_uint32)
         input_data = ctypes.c_char_p(write_data(td))
+        if verbose:
+            print("Produced data for C++ (delta %gs)" % (time.time() - start_time))
+            start_time = time.time()
         results = libcompreff.compreff(input_data, 4, ctypes.c_uint(max_subrs))
         if verbose:
             print("Lib call returned (delta %gs)" % (time.time() - start_time))
@@ -182,6 +185,9 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
                             stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE)
         input_data = write_data(td)
+        if verbose:
+            print("Produced data for C++ (delta %gs)" % (time.time() - start_time))
+            start_time = time.time()
         results, _ = p.communicate(input=input_data)
         if verbose:
             print("Executable returned (delta %gs)" % (time.time() - start_time))
@@ -194,6 +200,10 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
 
     for cs in td.CharStrings.values():
         cs.decompile()
+
+    if verbose:
+        print("Decompiled charstrings (delta %gs)" % (time.time() - start_time))
+        start_time = time.time()
 
     # in order of charset
     chstrings = map(lambda x: x.program, td.CharStrings.values())
@@ -224,7 +234,7 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
     Compreffor.apply_subrs(td, encoding, gsubrs, lsubrs)
 
     if verbose:
-        print("Finished post-processing and output (delta %gs)" % (time.time() - start_time))
+        print("Finished post-processing (delta %gs)" % (time.time() - start_time))
         print("Total time: %gs" % (time.time() - full_start_time))
 
 def main(filename=None, comp_fname=None, test=False, decompress=False,
@@ -259,7 +269,10 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
             compreff(font, verbose=verbose, **comp_kwargs)
 
             # save compressed font
+            start_time = time.time()
             font.save(out_name)
+            if verbose:
+                print("Compiled and saved (took %gs)" % (time.time() - start_time))
 
             if generate_cff:
                 # save CFF version
