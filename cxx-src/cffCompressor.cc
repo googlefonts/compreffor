@@ -269,7 +269,7 @@ charstring_pool_t::charstring_pool_t(unsigned nCharstrings, int _nrounds)
 
 void charstring_pool_t::writeEncoding(
                               const encoding_list& enc,
-                              const std::map<const substring_t*, uint16_t>& index,
+                              const std::map<const substring_t*, uint32_t>& index,
                               std::ostream& outFile) {
   // write the number of subrs called
   assert(enc.size() < 128);
@@ -296,7 +296,7 @@ void charstring_pool_t::writeSubrs(
   outFile.write(reinterpret_cast<const char*>(&numSubrs), 4);
 
   // number subrs
-  std::map<const substring_t*, uint16_t> index;
+  std::map<const substring_t*, uint32_t> index;
 
   // write each subr's representative glyph and offset in that charstring
   uint32_t curIndex = 0;
@@ -323,7 +323,7 @@ void charstring_pool_t::writeSubrs(
 
 unsigned charstring_pool_t::packEncoding(
                             const encoding_list& enc,
-                            const std::map<const substring_t*, uint16_t>& index,
+                            const std::map<const substring_t*, uint32_t>& index,
                             uint32_t* buffer) {
   unsigned pos = 0;
 
@@ -361,7 +361,7 @@ uint32_t* charstring_pool_t::getResponse(
   buffer[pos++] = numSubrs;
 
   // number subrs
-  std::map<const substring_t*, uint16_t> index;
+  std::map<const substring_t*, uint32_t> index;
 
   // write each subr's representative glyph and offset in that charstring
   uint32_t curIndex = 0;

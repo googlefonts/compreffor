@@ -196,11 +196,11 @@ class charstring_pool_t {
     encoding_list getUpdatedEncoding(substring_t* subr);
     void writeEncoding(
               const encoding_list& enc,
-              const std::map<const substring_t*, uint16_t>& index,
+              const std::map<const substring_t*, uint32_t>& index,
               std::ostream& outFile);
     unsigned packEncoding(
               const encoding_list& enc,
-              const std::map<const substring_t*, uint16_t>& index,
+              const std::map<const substring_t*, uint32_t>& index,
               uint32_t* buffer);
 };
 
