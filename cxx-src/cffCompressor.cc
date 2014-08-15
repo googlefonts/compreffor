@@ -5,7 +5,6 @@ const float K = 0.1;
 const float ALPHA = 0.1;
 const unsigned NUM_THREADS = 100;
 const unsigned DEFAULT_NUM_ROUNDS = 4;
-const unsigned DEFAULT_MAX_SUBRS = 65535;
 
 // token_t ============
 token_t::token_t(int_type value_) : value(value_) {}
@@ -254,17 +253,15 @@ inline void substring_t::setPrice(float newPrice) {
 // charstring_pool_t ==========
 charstring_pool_t::charstring_pool_t(unsigned nCharstrings)
   : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
-    finalized(false), numRounds(DEFAULT_NUM_ROUNDS),
-    maxSubrs(DEFAULT_MAX_SUBRS) {
+    finalized(false), numRounds(DEFAULT_NUM_ROUNDS) {
   pool.reserve(nCharstrings);
   offset.reserve(nCharstrings + 1);
   offset.push_back(0);
 }
 
-charstring_pool_t::charstring_pool_t(unsigned nCharstrings, int _nrounds,
-                                            unsigned _maxsubrs)
+charstring_pool_t::charstring_pool_t(unsigned nCharstrings, int _nrounds)
   : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
-    finalized(false), numRounds(_nrounds), maxSubrs(_maxsubrs) {
+    finalized(false), numRounds(_nrounds) {
   pool.reserve(nCharstrings);
   offset.reserve(nCharstrings + 1);
   offset.push_back(0);
@@ -304,7 +301,6 @@ void charstring_pool_t::writeSubrs(
   // write each subr's representative glyph and offset in that charstring
   uint32_t curIndex = 0;
   for (const substring_t& subr : subrs) {
-    assert(curIndex < maxSubrs);
     index[&subr] = curIndex++;
     uint32_t glyphIdx = rev[subr.getStart()];
     uint32_t glyphOffset = subr.getStart() - offset[glyphIdx];
@@ -370,7 +366,6 @@ uint32_t* charstring_pool_t::getResponse(
   // write each subr's representative glyph and offset in that charstring
   uint32_t curIndex = 0;
   for (const substring_t& subr : subrs) {
-    assert(curIndex < maxSubrs);
     index[&subr] = curIndex++;
     uint32_t glyphIdx = rev[subr.getStart()];
     uint32_t glyphOffset = subr.getStart() - offset[glyphIdx];
@@ -964,8 +959,7 @@ std::vector<unsigned char> charstring_pool_t::translateToken(const token_t& tok)
 
 charstring_pool_t CharstringPoolFactory(
                           std::istream &instream,
-                          int numRounds,
-                          unsigned maxSubrs) {
+                          int numRounds) {
   uint16_t count;
   unsigned char countBuffer[2];
   instream.read(reinterpret_cast<char*>(countBuffer), 2);
@@ -987,7 +981,7 @@ charstring_pool_t CharstringPoolFactory(
   }
   assert(offset[0] == 0);
 
-  charstring_pool_t csPool(count, numRounds, maxSubrs);
+  charstring_pool_t csPool(count, numRounds);
 
   unsigned len;
   for (int i = 0; i < count; ++i) {
@@ -1033,8 +1027,7 @@ void charstring_pool_t::printSuffix(unsigned idx, bool printVal) {
 
 charstring_pool_t CharstringPoolFactoryFromString(
                           unsigned char* buffer,
-                          int numRounds,
-                          unsigned maxSubrs) {
+                          int numRounds) {
   unsigned pos = 0;
 
   uint16_t count;
@@ -1056,7 +1049,7 @@ charstring_pool_t CharstringPoolFactoryFromString(
   }
   assert(offset[0] == 0);
 
-  charstring_pool_t csPool(count, numRounds, maxSubrs);
+  charstring_pool_t csPool(count, numRounds);
 
   unsigned len;
   for (int i = 0; i < count; ++i) {
@@ -1079,10 +1072,9 @@ charstring_pool_t CharstringPoolFactoryFromString(
   return csPool;
 }
 
-extern "C" uint32_t* compreff(unsigned char* dataStream, int numRounds, unsigned maxSubrs) {
+extern "C" uint32_t* compreff(unsigned char* dataStream, int numRounds) {
   charstring_pool_t csPool = CharstringPoolFactoryFromString(dataStream,
-                                                             numRounds,
-                                                             maxSubrs);
+                                                             numRounds);
   std::list<substring_t> subrs = csPool.getSubstrings();
   std::vector<encoding_list> glyphEncodings;
   csPool.subroutinize(subrs, glyphEncodings);
@@ -1095,25 +1087,21 @@ extern "C" void unload(char* response) {
 
 int main(int argc, const char* argv[]) {
   int numRounds = DEFAULT_NUM_ROUNDS;
-  unsigned maxSubrs = DEFAULT_MAX_SUBRS;
 
   unsigned argIdx = 1;
   while (argIdx < static_cast<unsigned>(argc)) {
     if (strcmp(argv[argIdx], "--nrounds") == 0) {
       numRounds = atoi(argv[argIdx + 1]);
       argIdx += 2;
-    } else if (strcmp(argv[argIdx], "--maxsubrs") == 0) {
-      maxSubrs = atoi(argv[argIdx + 1]);
-      argIdx += 2;
     } else {
-      break;
+      std::cerr << "Unrecognized argument: " << argv[argIdx] << std::endl;
+      return 1;
     }
   }
 
   charstring_pool_t csPool = CharstringPoolFactory(
                                       std::cin,
-                                      numRounds,
-                                      maxSubrs);
+                                      numRounds);
 
   std::list<substring_t> subrs = csPool.getSubstrings();
   std::vector<encoding_list> glyphEncodings;
