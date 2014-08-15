@@ -1,9 +1,20 @@
 #!/usr/bin/env python
 
 """
+Tool to subroutinize a CFF OpenType font. Backed by a C++ binary.
+
 This file is a bootstrap for the C++ edition of the FontTools compreffor.
 It prepares the input data for the executable and reads back in the results,
 applying them to the input font.
+
+Usage (command line):
+>>> ./cxxCompressor.py /path/to/font.otf
+# font written to /path/to/font.compressed.otf
+
+Usage (python):
+>>> font = TTFont("/path/to/font.otf")
+>>> cxxCompressor.compreff(font, use_lib=False)
+>>> font.save("/path/to/output.otf")
 """
 
 import StringIO
@@ -20,14 +31,22 @@ from fontTools.ttLib import TTFont
 from pyCompressor import Compreffor, CandidateSubr, tokenCost, human_size
 from testPyCompressor import test_compression_integrity, test_call_depth
 
+# default values:
 NSUBRS_LIMIT = 65533
 SUBR_NEST_LIMIT  = 10
 
 class IdKeyMap(object):
+    """A map that where every key's value is itself. Used
+    as a map from simplified key space to actual key space
+    in pyCompressor"""
+
     def __getitem__(self, tok):
         return tok
 
 class SimpleCandidateSubr(CandidateSubr):
+    """A reimplimentation of CandidateSubr to be more
+    compatible with results from C++"""
+
     def __init__(self, length, ref_loc):
         self.length = length
         self.location = ref_loc
@@ -51,7 +70,9 @@ class SimpleCandidateSubr(CandidateSubr):
         return self._encoding
 
 def write_data(td):
-    """Writes CharStrings and FDSelect from the TopDict td into a string buffer."""
+    """Writes CharStrings and FDSelect from the TopDict td into a string
+    that is easily readable."""
+
     out = StringIO.StringIO()
     td.CharStrings.charStringsIndex.getCompiler(td.strings, None).toFile(out)
     try:
@@ -62,6 +83,9 @@ def write_data(td):
     return out.getvalue()
 
 def get_encoding(data_buffer, subrs):
+    """Read a charstring's encoding stream out of a string buffer response
+    from cffCompressor.cc"""
+
     pos = 0
     num_calls = data_buffer[pos]
     pos += 1
@@ -76,6 +100,9 @@ def get_encoding(data_buffer, subrs):
     return enc, pos
 
 def read_data(td, result_string):
+    """Read the output of cffCompressor.cc into Python data
+    structures."""
+
     results = array.array("B", result_string)
     num_subrs = struct.unpack_from('<I', results[:4])[0]
 
@@ -106,6 +133,9 @@ def read_data(td, result_string):
     return (subrs, glyph_encodings)
 
 def interpret_data(td, results):
+    """Interpret the result array from a libcompreff call to
+    produce Python data structures."""
+
     class MutableSpace: pass
     MutableSpace.pos = 0
     def pop_result():
@@ -146,6 +176,10 @@ def interpret_data(td, results):
     return (subrs, glyph_encodings)
 
 def compreff(font, verbose=False, use_lib=False, **kwargs):
+    """Main function that compresses `font`, a TTFont object,
+    in place. All heavy lifting is passed off either to an
+    executable or shared library based on the use_lib argument."""
+
     full_start_time = start_time = time.time()
 
     assert len(font['CFF '].cff.topDictIndex) == 1
@@ -309,6 +343,7 @@ if __name__ == '__main__':
                         help="the path to the compressed file. if this is given"
                              " with the -c flag, it will be checked against "
                              " `filename`.")
+    # no tests yet :(
     # parser.add_argument('-t', '--test', required=False, action='store_true',
     #                     default=False, help="run test cases")
     parser.add_argument('-v', '--verbose', required=False, action='store_true',

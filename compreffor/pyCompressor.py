@@ -3,7 +3,7 @@
 """
 Tool to subroutinize a CFF OpenType font.
 
-Usage (on command line):
+Usage (command line):
 >>> ./pyCompressor.py /path/to/font.otf
 # font written to /path/to/font.compressed.otf
 
