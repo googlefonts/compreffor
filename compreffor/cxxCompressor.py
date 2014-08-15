@@ -164,7 +164,6 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
     max_subrs = NSUBRS_LIMIT
     if 'nsubrs_limit' in kwargs and kwargs.get('nsubrs_limit') != None:
         max_subrs = kwargs.get('nsubrs_limit')
-        call.extend(['--maxsubrs', str(max_subrs)])
 
     if use_lib:
         lib_path = os.path.join(os.path.dirname(__file__), "libcompreff.so")
