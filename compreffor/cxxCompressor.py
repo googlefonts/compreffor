@@ -173,7 +173,7 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
         if verbose:
             print("Produced data for C++ (delta %gs)" % (time.time() - start_time))
             start_time = time.time()
-        results = libcompreff.compreff(input_data, 4, ctypes.c_uint(max_subrs))
+        results = libcompreff.compreff(input_data, 4)
         if verbose:
             print("Lib call returned (delta %gs)" % (time.time() - start_time))
             start_time = time.time()
