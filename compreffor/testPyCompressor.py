@@ -270,8 +270,10 @@ def test_compression_integrity(orignal_file, compressed_file):
 
     passed = True
     for g in orig_gset.keys():
-        orig_gset[g].decompile()
-        if not (orig_gset[g].program == comp_gset[g].program):
+        orig_glyph = orig_gset[g]._glyph
+        comp_glyph = comp_gset[g]._glyph
+        orig_glyph.decompile()
+        if not (orig_glyph.program == comp_glyph.program):
             print "Difference found in glyph '%s'" % (g,)
             passed = False
 

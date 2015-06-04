@@ -266,7 +266,7 @@ class SubstringFinder(object):
         next_key = 0
 
         for k in self.glyph_set_keys:
-            char_string = glyph_set[k]
+            char_string = glyph_set[k]._glyph
             char_string.decompile()
             program = []
             piter = iter(enumerate(char_string.program))
