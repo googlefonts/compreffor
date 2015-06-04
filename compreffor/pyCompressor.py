@@ -531,7 +531,7 @@ class Compreffor(object):
             assert len(lsubrs) == 1
 
             if not hasattr(top_dict.Private, "Subrs"):
-                fd.Private.Subrs = cffLib.SubrsIndex()
+                top_dict.Private.Subrs = cffLib.SubrsIndex()
             for subr in lsubrs[0]:
                 item = psCharStrings.T2CharString(program=subr._program)
                 top_dict.Private.Subrs.append(item)
