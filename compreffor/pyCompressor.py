@@ -1034,7 +1034,7 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
             if decompress:
                 from fontTools import subset
                 options = subset.Options()
-                options.decompress = True
+                options.desubroutinize = True
                 subsetter = subset.Subsetter(options=options)
                 subsetter.populate(glyphs=font.getGlyphOrder())
                 subsetter.subset(font)

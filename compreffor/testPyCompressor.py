@@ -262,7 +262,7 @@ def test_compression_integrity(orignal_file, compressed_file):
 
     # decompress the compressed font
     options = fontTools.subset.Options()
-    options.decompress = True
+    options.desubroutinize = True
     subsetter = fontTools.subset.Subsetter(options=options)
     subsetter.populate(glyphs=comp_font.getGlyphOrder())
     subsetter.subset(orig_font)
