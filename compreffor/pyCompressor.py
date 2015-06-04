@@ -271,9 +271,8 @@ class SubstringFinder(object):
             program = []
             piter = iter(enumerate(char_string.program))
             for i, tok in piter:
-                assert tok not in ("callsubr", "callgsubr", "return", "endchar") or \
-                       tok in ("callsubr", "callgsubr", "return", "endchar") and \
-                            i == len(char_string.program) - 1
+                assert tok not in ("callsubr", "callgsubr", "return")
+                assert tok != "endchar" or i == len(char_string.program) - 1
                 if tok in ("hintmask", "cntrmask"):
                     # Attach next token to this, as a subroutine
                     # call cannot be placed between this token and
