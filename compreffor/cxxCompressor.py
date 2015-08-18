@@ -204,7 +204,7 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
         print("Preparing external call...")
         start_time = time.time()
 
-    call = [os.path.join(os.path.dirname(__file__), "cffCompressor")]
+    call = [os.path.join(os.path.abspath(os.path.dirname(__file__)), "cffCompressor")]
 
     if 'nrounds' in kwargs and kwargs.get('nrounds') != None:
         call.extend(['--nrounds', str(kwargs.get('nrounds'))])
