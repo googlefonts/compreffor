@@ -266,14 +266,13 @@ class SubstringFinder(object):
         next_key = 0
 
         for k in self.glyph_set_keys:
-            char_string = glyph_set[k]
+            char_string = glyph_set[k]._glyph
             char_string.decompile()
             program = []
             piter = iter(enumerate(char_string.program))
             for i, tok in piter:
-                assert tok not in ("callsubr", "callgsubr", "return", "endchar") or \
-                       tok in ("callsubr", "callgsubr", "return", "endchar") and \
-                            i == len(char_string.program) - 1
+                assert tok not in ("callsubr", "callgsubr", "return")
+                assert tok != "endchar" or i == len(char_string.program) - 1
                 if tok in ("hintmask", "cntrmask"):
                     # Attach next token to this, as a subroutine
                     # call cannot be placed between this token and
@@ -532,7 +531,7 @@ class Compreffor(object):
             assert len(lsubrs) == 1
 
             if not hasattr(top_dict.Private, "Subrs"):
-                fd.Private.Subrs = cffLib.SubrsIndex()
+                top_dict.Private.Subrs = cffLib.SubrsIndex()
             for subr in lsubrs[0]:
                 item = psCharStrings.T2CharString(program=subr._program)
                 top_dict.Private.Subrs.append(item)
@@ -1035,7 +1034,7 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
             if decompress:
                 from fontTools import subset
                 options = subset.Options()
-                options.decompress = True
+                options.desubroutinize = True
                 subsetter = subset.Subsetter(options=options)
                 subsetter.populate(glyphs=font.getGlyphOrder())
                 subsetter.subset(font)
