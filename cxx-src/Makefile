@@ -7,14 +7,29 @@ CC = g++
 DEPS = cffCompressor.h
 BIN = ../compreffor
 
-all: cffCompressor lib
-cffCompressor: cffCompressor.o
-	$(CC) $(CXXFLAGS) -o $(BIN)/$@ $^
+ifeq ($(OS),Windows_NT)
+    uname_S := Windows
+else
+    uname_S := $(shell uname -s)
+endif
+ifeq ($(uname_S), Windows)
+    executable = cffCompressor.exe
+    sharedlib = compreff.dll
+    # statically link libgcc, libstdc++ and libwinpthread on mingw-w64
+    LDFLAGS ?= -static
+else
+    executable = cffCompressor
+    sharedlib = libcompreff.so
+endif
+
+all: $(executable) lib
+$(executable): cffCompressor.o
+	$(CC) $(CXXFLAGS) -o $(BIN)/$@ $(LDFLAGS) $^
 %.o: %.cc $(DEPS)
 	$(CC) $(CXXFLAGS) -o $@ -c -O$(O) $<
-lib: libcompreff.so
-libcompreff.so: cffCompressor.cc $(DEPS)
-	$(CC) $(CXXSOFLAGS) -o $(BIN)/$@ -O$(O) -fPIC $<
+lib: $(sharedlib)
+$(sharedlib): cffCompressor.cc $(DEPS)
+	$(CC) $(CXXSOFLAGS) -o $(BIN)/$@ -O$(O) -fPIC $(LDFLAGS) $<
 clean:
-	rm -f cffCompressor.o cffCompressor libcompreff.so
+	rm -rf cffCompressor.o $(BIN)/$(executable) $(BIN)/$(sharedlib) $(BIN)/$(sharedlib).dSYM
 ALL: clean all
