@@ -1,0 +1,11 @@
+include setup.py
+include LICENSE
+include README.md
+exclude compreffor/cffCompressor
+exclude compreffor/cffCompressor.exe
+exclude compreffor/compreff.dll
+exclude compreffor/libcompreff.so
+recursive-include compreffor *.py
+recursive-include tools *.py
+recursive-include cxx-src *.cc *.h
+include cxx-src/Makefile
