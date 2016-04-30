@@ -195,7 +195,7 @@ def interpret_data(td, results):
 
     return (subrs, glyph_encodings)
 
-def compreff(font, verbose=False, use_lib=False, **kwargs):
+def compreff(font, verbose=False, use_lib=True, **kwargs):
     """Main function that compresses `font`, a TTFont object,
     in place. All heavy lifting is passed off either to an
     executable or shared library based on the use_lib argument."""
