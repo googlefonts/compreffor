@@ -80,10 +80,9 @@ extension. Example usage:
 # font written to /path/to/font.compressed.otf
 """
 
+from compreffor import cxxCompressor, pyCompressor
 import os
 
-import pyCompressor
-import cxxCompressor
 
 class Methods:
     NoPref, Py, CxxExecutable, CxxLib = range(4)

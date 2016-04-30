@@ -31,7 +31,6 @@ Usage (python):
 >>> font.save("/path/to/output.otf")
 """
 
-import StringIO
 import argparse
 import array
 import ctypes
@@ -40,10 +39,12 @@ import subprocess
 import sys
 import time
 import os
+from compreffor.pyCompressor import (
+    Compreffor, CandidateSubr, tokenCost, human_size)
+from compreffor.testPyCompressor import (
+    test_compression_integrity, test_call_depth)
+from fontTools.misc.py23 import BytesIO
 from fontTools.ttLib import TTFont
-
-from pyCompressor import Compreffor, CandidateSubr, tokenCost, human_size
-from testPyCompressor import test_compression_integrity, test_call_depth
 
 # default values:
 NSUBRS_LIMIT = 65533
@@ -87,7 +88,7 @@ def write_data(td):
     """Writes CharStrings and FDSelect from the TopDict td into a string
     that is easily readable."""
 
-    out = StringIO.StringIO()
+    out = BytesIO()
     td.CharStrings.charStringsIndex.getCompiler(td.strings, None).toFile(out)
     try:
         fdselect = struct.pack('B', len(td.FDArray)) + array.array('B', list(td.FDSelect)).tostring()

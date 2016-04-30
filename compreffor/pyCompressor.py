@@ -254,7 +254,7 @@ class SubstringFinder(object):
 
         self._completed_suffixes = False
 
-        self.verbose = verbose 
+        self.verbose = verbose
 
     def process_chstrings(self, glyph_set):
         """Remap the charstring alphabet and put into self.data"""
@@ -351,7 +351,7 @@ class SubstringFinder(object):
     def get_substrings(self, min_freq=2, check_positive=True, sort_by_length=False):
         """
         Return repeated substrings (type CandidateSubr) from the charstrings
-        sorted by subroutine savings with freq >= min_freq using the LCP array. 
+        sorted by subroutine savings with freq >= min_freq using the LCP array.
 
         Arguments:
         min_freq -- the minimum frequency required to include a substring
@@ -385,7 +385,7 @@ class SubstringFinder(object):
                 freq = i - start_idx
                 if freq < min_freq:
                     continue
-                
+
                 substr = CandidateSubr(
                                        l,
                                        self.suffixes[start_idx],
@@ -460,7 +460,7 @@ class Compreffor(object):
         self.verbose = verbose
         self.print_status = print_status
         self.test_mode = test_mode
-        
+
         if chunk_ratio != None:
             self.POOL_CHUNKRATIO = chunk_ratio
         elif font and len(font["CFF "].cff.topDictIndex[0].charset) < self.CHUNK_CHARSET_CUTOFF:
@@ -516,7 +516,7 @@ class Compreffor(object):
                 if not hasattr(fd.Private, "Subrs"):
                     fd.Private.Subrs = cffLib.SubrsIndex()
             for subrs, subrs_index in zip(itertools.chain([gsubrs], lsubrs),
-                                          itertools.chain([top_dict.GlobalSubrs], 
+                                          itertools.chain([top_dict.GlobalSubrs],
                                           [fd.Private.Subrs for fd in top_dict.FDArray])):
                 for subr in subrs:
                     item = psCharStrings.T2CharString(program=subr._program)
@@ -572,7 +572,7 @@ class Compreffor(object):
         fdlen -- the number of FD's in the source font, or 1 if there are none
 
         Returns:
-        A three-part dictionary with keys 'gsubrs', 'lsubrs', and 
+        A three-part dictionary with keys 'gsubrs', 'lsubrs', and
         'glyph_encodings'. The 'glyph_encodings' encoding dictionary
         specifies how to break up each charstring. Encoding[i]
         describes how to encode glyph i. Each entry is something
@@ -617,7 +617,7 @@ class Compreffor(object):
         for idx, substr in enumerate(substrings):
             substr._adjusted_cost = substr.cost()
             substr._price = substr._adjusted_cost
-            substr._usages = substr.freq # this is the frequency that the substring appears, 
+            substr._usages = substr.freq # this is the frequency that the substring appears,
                                         # not necessarily used
             substr._list_idx = idx
             substr_dict[substr.value()] = (idx, substr._price) # NOTE: avoid excess data copying on fork
@@ -633,7 +633,7 @@ class Compreffor(object):
 
             # minimize substring costs
             csize = int(math.ceil(self.POOL_CHUNKRATIO*len(substrings)))
-            substr_encodings = pool.map(functools.partial(optimize_charstring, 
+            substr_encodings = pool.map(functools.partial(optimize_charstring,
                                                           cost_map=cost_map,
                                                           substr_dict=substr_dict,
                                                           verbose=self.verbose),
@@ -754,7 +754,7 @@ class Compreffor(object):
 
         subrs.sort(key=lambda s: s.subr_saving(use_usages=True, true_cost=True))
 
-        while subrs and (any(len(s) < subr_limit for s in lsubrs) or 
+        while subrs and (any(len(s) < subr_limit for s in lsubrs) or
                          len(gsubrs) < subr_limit):
             subr = subrs[-1]
             del subrs[-1]
@@ -866,7 +866,7 @@ class Compreffor(object):
                 next_subr = callees.pop()
                 if next_subr._flatten:
                     callees.extend([it[1] for it in next_subr._encoding])
-                elif (not hasattr(next_subr, "_max_call_depth") or 
+                elif (not hasattr(next_subr, "_max_call_depth") or
                             next_subr._max_call_depth < depth + 1):
                         increment_subr_depth(next_subr, depth + 1)
 
@@ -898,7 +898,7 @@ class Compreffor(object):
                 offset += subr.length - len(subr._program)
             else:
                 assert hasattr(subr, "_position"), \
-                        "CandidateSubr without position in Subrs encountered"   
+                        "CandidateSubr without position in Subrs encountered"
 
                 if subr._global:
                     operator = "callgsubr"
@@ -909,7 +909,7 @@ class Compreffor(object):
                     assert fdidx == None or subr._fdidx[0] == fdidx
                     operator = "callsubr"
                     bias = lbias_arr[subr._fdidx[0]]
-                    
+
                 program[s] = [subr._position - bias, operator]
                 offset += subr.length - 2
         return program
@@ -974,7 +974,7 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose):
                 # note: must not be branching, so just make _price actual cost
                 substr = None
                 option = cur_cost + results[j]
-            
+
             if option < min_option:
                 min_option = option
                 min_enc_idx = j
@@ -1054,7 +1054,7 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
                 font["CFF "].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], "w"), None)
 
             comp_size = os.path.getsize(out_name)
-            print("Compressed to %s -- saved %s" % 
+            print("Compressed to %s -- saved %s" %
                     (os.path.basename(out_name), human_size(orig_size - comp_size)))
 
             if check:
