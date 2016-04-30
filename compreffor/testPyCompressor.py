@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
 import unittest, random, sys
-import pyCompressor
+from compreffor import pyCompressor
+from compreffor.testDummy import DummyGlyphSet
 from fontTools.ttLib import TTFont
-from testDummy import DummyGlyphSet
 
 class TestCffCompressor(unittest.TestCase):
 
@@ -274,14 +275,14 @@ def test_compression_integrity(orignal_file, compressed_file):
         comp_glyph = comp_gset[g]._glyph
         orig_glyph.decompile()
         if not (orig_glyph.program == comp_glyph.program):
-            print "Difference found in glyph '%s'" % (g,)
+            print("Difference found in glyph '%s'" % (g,))
             passed = False
 
     if passed:
-        print "Fonts match!"
+        print("Fonts match!")
         return True
     else:
-        print "Fonts have differences :("
+        print("Fonts have differences :(")
         return False
 
 def test_call_depth(compressed_file):
@@ -322,18 +323,18 @@ def check_cff_call_depth(cff):
                 if tok == "callsubr":
                     assert type(last) == int
                     next_subr = subrs[last + bias]
-                    if (not hasattr(next_subr, "_max_call_depth") or 
+                    if (not hasattr(next_subr, "_max_call_depth") or
                             next_subr._max_call_depth < depth + 1):
                         increment_subr_depth(next_subr, depth + 1, subrs)
                 elif tok == "callgsubr":
                     assert type(last) == int
                     next_subr = gsubrs[last + gbias]
-                    if (not hasattr(next_subr, "_max_call_depth") or 
+                    if (not hasattr(next_subr, "_max_call_depth") or
                             next_subr._max_call_depth < depth + 1):
                         increment_subr_depth(next_subr, depth + 1, subrs)
                 last = tok
         else:
-            print "Compiled subr encountered"
+            print("Compiled subr encountered")
 
     def increment_subr_depth(subr, depth, subrs=None):
         if not hasattr(subr, "_max_call_depth") or subr._max_call_depth < depth:
@@ -343,15 +344,15 @@ def check_cff_call_depth(cff):
             track_info.max_for_all = subr._max_call_depth
 
         program = subr.program
-        follow_program(program, depth, subrs)        
+        follow_program(program, depth, subrs)
 
     for cs in td.CharStrings.values():
         cs.decompile()
         follow_program(cs.program, 0, cs.private.Subrs)
 
     if track_info.max_for_all <= SUBR_NESTING_LIMIT:
-        print "Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all
+        print("Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all)
         return track_info.max_for_all
     else:
-        print "Subroutine nesting depth too deep :( [max nesting depth of %d]" % track_info.max_for_all
+        print("Subroutine nesting depth too deep :( [max nesting depth of %d]" % track_info.max_for_all)
         return track_info.max_for_all
