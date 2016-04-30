@@ -42,6 +42,12 @@ from collections import deque
 from fontTools import cffLib
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
+from fontTools.misc.py23 import basestring
+
+try:
+    range = xrange
+except:
+    pass
 
 SINGLE_BYTE_OPS = set(['hstem',
                        'vstem',
@@ -321,18 +327,18 @@ class SubstringFinder(object):
 
         assert self._completed_suffixes
 
-        rank = [[0 for _ in xrange(len(d_list))] for d_list in self.data]
-        lcp = [0 for _ in xrange(self.length)]
+        rank = [[0 for _ in range(len(d_list))] for d_list in self.data]
+        lcp = [0 for _ in range(self.length)]
 
         # compute rank array
         for i in range(self.length):
             glyph_idx, tok_idx = self.suffixes[i]
             rank[glyph_idx][tok_idx] = i
 
-        for glyph_idx in xrange(len(self.data)):
+        for glyph_idx in range(len(self.data)):
             cur_h = 0
             chstring = self.data[glyph_idx]
-            for tok_idx in xrange(len(chstring)):
+            for tok_idx in range(len(chstring)):
                 cur_rank = rank[glyph_idx][tok_idx]
                 if cur_rank > 0:
                     last_glidx, last_tidx = self.suffixes[cur_rank - 1]
@@ -750,7 +756,7 @@ class Compreffor(object):
         map(set_flatten, bad_substrings)
 
         gsubrs = []
-        lsubrs = [[] for _ in xrange(fdlen)]
+        lsubrs = [[] for _ in range(fdlen)]
 
         subrs.sort(key=lambda s: s.subr_saving(use_usages=True, true_cost=True))
 
@@ -837,7 +843,7 @@ class Compreffor(object):
                 subr._program = program
 
         for subr_arr, sel in zip(itertools.chain([gsubrs], lsubrs),
-                                  itertools.chain([None], xrange(fdlen))):
+                                  itertools.chain([None], range(fdlen))):
             for subr in subr_arr:
                 program = [rev_keymap[tok] for tok in subr.value()]
                 if program[-1] not in ("endchar", "return"):
@@ -950,9 +956,9 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose):
     else:
         skip_idx = None
 
-    results = [0 for _ in xrange(len(charstring) + 1)]
-    next_enc_idx = [None for _ in xrange(len(charstring))]
-    next_enc_substr = [None for _ in xrange(len(charstring))]
+    results = [0 for _ in range(len(charstring) + 1)]
+    next_enc_idx = [None for _ in range(len(charstring))]
+    next_enc_substr = [None for _ in range(len(charstring))]
     for i in reversed(range(len(charstring))):
         min_option = float("inf")
         min_enc_idx = len(charstring)
