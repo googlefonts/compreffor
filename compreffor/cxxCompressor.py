@@ -46,6 +46,11 @@ from compreffor.testPyCompressor import (
 from fontTools.misc.py23 import BytesIO
 from fontTools.ttLib import TTFont
 
+if sys.platform == 'win32':
+    LIB_NAME = 'compreff.dll'
+else:
+    LIB_NAME = 'libcompreff.so'
+
 # default values:
 NSUBRS_LIMIT = 65533
 SUBR_NEST_LIMIT  = 10
@@ -190,7 +195,7 @@ def interpret_data(td, results):
 
     return (subrs, glyph_encodings)
 
-def compreff(font, verbose=False, use_lib=False, **kwargs):
+def compreff(font, verbose=False, use_lib=True, **kwargs):
     """Main function that compresses `font`, a TTFont object,
     in place. All heavy lifting is passed off either to an
     executable or shared library based on the use_lib argument."""
@@ -215,7 +220,7 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
         max_subrs = kwargs.get('nsubrs_limit')
 
     if use_lib:
-        lib_path = os.path.join(os.path.dirname(__file__), "libcompreff.so")
+        lib_path = os.path.join(os.path.dirname(__file__), LIB_NAME)
         libcompreff = ctypes.CDLL(lib_path)
         libcompreff.compreff.restype = ctypes.POINTER(ctypes.c_uint32)
         input_data = ctypes.c_char_p(write_data(td))
