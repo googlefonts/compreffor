@@ -1,0 +1,34 @@
+CXXFLAGS = /nologo /O2 /EHsc /Zi
+BIN = ..\compreffor
+
+SRC_NAME = cffCompressor
+LIB_NAME = compreff
+
+TARGET_EXE = $(BIN)\$(SRC_NAME).exe
+TARGET_DLL = $(BIN)\$(LIB_NAME).dll
+
+all: exe dll
+
+exe: $(TARGET_EXE)
+
+$(TARGET_EXE): $(SRC_NAME).obj
+	$(CXX) $(CXXFLAGS) /Fe$@ $(SRC_NAME).obj
+
+$(SRC_NAME).obj: $(SRC_NAME).cc $(SRC_NAME).h
+	$(CXX) $(CXXFLAGS) /c $(SRC_NAME).cc
+
+dll: $(TARGET_DLL)
+
+$(TARGET_DLL): $(SRC_NAME).cc $(SRC_NAME).h
+	$(CXX) $(CXXFLAGS) /Fe$@ $(SRC_NAME).cc /LD /link /DEF:$(LIB_NAME).def
+
+clean:
+	@-if exist $(SRC_NAME).obj del /f /q $(SRC_NAME).obj
+	@-if exist $(TARGET_EXE) del /f /q $(TARGET_EXE)
+	@-if exist $(BIN)\$(SRC_NAME).ilk del /f /q $(BIN)\$(SRC_NAME).ilk
+	@-if exist $(BIN)\$(SRC_NAME).pdb del /f /q $(BIN)\$(SRC_NAME).pdb
+	@-if exist $(TARGET_DLL) del /f /q $(TARGET_DLL)
+	@-if exist $(BIN)\$(LIB_NAME).exp del /f /q $(BIN)\$(LIB_NAME).exp
+	@-if exist $(BIN)\$(LIB_NAME).lib del /f /q $(BIN)\$(LIB_NAME).lib
+	@-if exist $(BIN)\$(LIB_NAME).ilk del /f /q $(BIN)\$(LIB_NAME).ilk
+	@-if exist $(BIN)\$(LIB_NAME).pdb del /f /q $(BIN)\$(LIB_NAME).pdb
