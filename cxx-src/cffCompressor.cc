@@ -728,12 +728,13 @@ void charstring_pool_t::addRawCharstring(unsigned char* data, unsigned len) {
       }
     }
 
-    unsigned char rawTok[tokSize];
+    unsigned char* rawTok = new unsigned char[tokSize];
     rawTok[0] = first;
     memcpy(rawTok + 1, data + csPos + 1, tokSize - 1);
     csPos += (tokSize - 1);
 
     addRawToken(rawTok, tokSize);
+    delete[] rawTok;
 
     ++nToks;
   }
@@ -986,7 +987,7 @@ charstring_pool_t CharstringPoolFactory(
 
   uint32_t* offset = new uint32_t[count + 1];
 
-  unsigned char offsetBuffer[(count + 1) * offSize];
+  unsigned char* offsetBuffer = new unsigned char[(count + 1) * offSize];
   instream.read(reinterpret_cast<char*>(offsetBuffer), (count + 1) * offSize);
   for (int i = 0; i < count + 1; ++i) {
     offset[i] = 0;
@@ -995,6 +996,7 @@ charstring_pool_t CharstringPoolFactory(
     }
     offset[i] -= 1;  // CFF is 1-indexed(-ish)
   }
+  delete[] offsetBuffer;
   assert(offset[0] == 0);
 
   charstring_pool_t csPool(count, numRounds);
