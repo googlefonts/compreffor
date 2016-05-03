@@ -451,7 +451,6 @@ void charstring_pool_t::subroutinize(
 
   unsigned substringChunkSize = substrings.size() / NUM_THREADS + 1;
   unsigned glyphChunkSize = count / NUM_THREADS + 1;
-  std::vector<std::future< std::vector<encoding_list> > > futures;
   std::vector<std::thread> threads;
 
   for (int runCount = 0; runCount < numRounds; ++runCount) {
@@ -486,27 +485,11 @@ void charstring_pool_t::subroutinize(
     }
 
     // minimize cost of glyphstrings
-    futures.clear();
-    glyphEncodings.clear();
-    for (unsigned i = 0; i < NUM_THREADS; ++i) {
-      if (i * glyphChunkSize >= count)
-        break;
-
-      unsigned stop = (i + 1) * glyphChunkSize;
-      if (stop > count)
-        stop = count;
-
-      futures.push_back(std::async(std::launch::async,
-                            optimizeGlyphstrings,
+    glyphEncodings = optimizeGlyphstrings(
                             std::ref(substrMap),
                             std::ref(*this),
-                            i * glyphChunkSize,
-                            stop));
-    }
-    for (auto threadIt = futures.begin(); threadIt != futures.end(); ++threadIt) {
-      std::vector<encoding_list> res = threadIt->get();
-      glyphEncodings.insert(glyphEncodings.end(), res.begin(), res.end());
-    }
+                            0,
+                            count);
 
     // update usages
     for (substring_t& substr : substrings) {
