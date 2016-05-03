@@ -1,0 +1,4 @@
+LIBRARY   compreff
+EXPORTS
+   compreff   @1
+   unload     @2

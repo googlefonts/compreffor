@@ -16,6 +16,12 @@
 
 #include "cffCompressor.h"
 
+// needed for Windows's "_setmode" to enable binary mode for stdin/stdout
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 const unsigned int_size = sizeof(int_type);
 const float K = 0.1;
 const float ALPHA = 0.1;
@@ -728,12 +734,13 @@ void charstring_pool_t::addRawCharstring(unsigned char* data, unsigned len) {
       }
     }
 
-    unsigned char rawTok[tokSize];
+    unsigned char* rawTok = new unsigned char[tokSize];
     rawTok[0] = first;
     memcpy(rawTok + 1, data + csPos + 1, tokSize - 1);
     csPos += (tokSize - 1);
 
     addRawToken(rawTok, tokSize);
+    delete[] rawTok;
 
     ++nToks;
   }
@@ -986,7 +993,7 @@ charstring_pool_t CharstringPoolFactory(
 
   uint32_t* offset = new uint32_t[count + 1];
 
-  unsigned char offsetBuffer[(count + 1) * offSize];
+  unsigned char* offsetBuffer = new unsigned char[(count + 1) * offSize];
   instream.read(reinterpret_cast<char*>(offsetBuffer), (count + 1) * offSize);
   for (int i = 0; i < count + 1; ++i) {
     offset[i] = 0;
@@ -995,6 +1002,7 @@ charstring_pool_t CharstringPoolFactory(
     }
     offset[i] -= 1;  // CFF is 1-indexed(-ish)
   }
+  delete[] offsetBuffer;
   assert(offset[0] == 0);
 
   charstring_pool_t csPool(count, numRounds);
@@ -1114,6 +1122,17 @@ int main(int argc, const char* argv[]) {
       return 1;
     }
   }
+
+#ifdef _WIN32
+  if (_setmode(_fileno(stdin), _O_BINARY) == -1) {
+    std::cerr << "Cannot set stdin to binary mode" << std::endl;
+    return 1;
+  }
+  if (_setmode(_fileno(stdout), _O_BINARY) == -1) {
+    std::cerr << "Cannot set stdout to binary mode" << std::endl;
+    return 1;
+  }
+#endif
 
   charstring_pool_t csPool = CharstringPoolFactory(
                                       std::cin,

@@ -82,6 +82,19 @@ extension. Example usage:
 
 from compreffor import cxxCompressor, pyCompressor
 import os
+import sys
+
+
+# platform-specific executable name
+EXE_NAME = 'cffCompressor'
+if sys.platform == 'win32':
+    EXE_NAME += '.exe'
+
+# platform-specific shared library name
+if sys.platform == 'win32':
+    LIB_NAME = 'compreff.dll'
+else:
+    LIB_NAME = 'libcompreff.so'
 
 
 class Methods:
@@ -92,8 +105,8 @@ class Compreffor(object):
         self.font = font
         self.method = method
         self.options = options
-        self.exe_path = os.path.join(os.path.dirname(__file__), "cffCompressor")
-        self.lib_path = os.path.join(os.path.dirname(__file__), "libcompreff.so")
+        self.exe_path = os.path.join(os.path.dirname(__file__), EXE_NAME)
+        self.lib_path = os.path.join(os.path.dirname(__file__), LIB_NAME)
 
     def compress(self):
         if self.method == Methods.NoPref:
