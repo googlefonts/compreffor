@@ -24,6 +24,16 @@
 #include <string.h>
 #include <thread>
 
+/* If MinGW GCC is compiled with "win32" threads instead of "posix"
+ * it lacks the C++11 standard threading classes, so we need to include
+ * the "mingw-std-threads" header-only library from:
+ *
+ *     https://github.com/meganz/mingw-std-threads
+ */
+#if defined(__MINGW32__) && !defined(__WINPTHREADS_VERSION)
+#include "mingw-std-threads/mingw.thread.h"
+#endif
+
 #include <algorithm>
 #include <fstream>
 #include <iostream>
