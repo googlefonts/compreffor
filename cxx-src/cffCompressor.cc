@@ -452,6 +452,7 @@ void charstring_pool_t::subroutinize(
   unsigned substringChunkSize = substrings.size() / NUM_THREADS + 1;
   unsigned glyphChunkSize = count / NUM_THREADS + 1;
   std::vector<std::thread> threads;
+  std::vector<std::vector<encoding_list> > results((count+glyphChunkSize-1)/glyphChunkSize);
 
   for (int runCount = 0; runCount < numRounds; ++runCount) {
     /// update market
@@ -485,11 +486,31 @@ void charstring_pool_t::subroutinize(
     }
 
     // minimize cost of glyphstrings
-    glyphEncodings = optimizeGlyphstrings(
+    threads.clear();
+    glyphEncodings.clear();
+    for (unsigned i = 0; i < NUM_THREADS; ++i) {
+      if (i * glyphChunkSize >= count)
+        break;
+
+      unsigned stop = (i + 1) * glyphChunkSize;
+      if (stop > count)
+        stop = count;
+
+      results[i].clear();
+      threads.push_back(std::thread(optimizeGlyphstrings,
                             std::ref(substrMap),
                             std::ref(*this),
-                            0,
-                            count);
+                            i * glyphChunkSize,
+                            stop,
+                            std::ref(results[i])));
+    }
+    for (auto threadIt = threads.begin(); threadIt != threads.end(); ++threadIt) {
+      threadIt->join();
+    }
+
+    for (std::vector<encoding_list> &res : results) {
+      glyphEncodings.insert(glyphEncodings.end(), res.begin(), res.end());
+    }
 
     // update usages
     for (substring_t& substr : substrings) {
@@ -545,12 +566,12 @@ void optimizeSubstrings(std::map<light_substring_t, substring_t*> &substrMap,
   }
 }
 
-std::vector<encoding_list> optimizeGlyphstrings(
+void optimizeGlyphstrings(
                           std::map<light_substring_t, substring_t*> &substrMap,
                           charstring_pool_t &csPool,
                           unsigned start,
-                          unsigned stop) {
-  std::vector<encoding_list> result;
+                          unsigned stop,
+                          std::vector<encoding_list>& result) {
   for (unsigned i = start; i < stop; ++i) {
     charstring_t cs = csPool.getCharstring(i);
     result.push_back(optimizeCharstring(
@@ -561,7 +582,6 @@ std::vector<encoding_list> optimizeGlyphstrings(
                               false)
                         .first);
   }
-  return result;
 }
 
 std::pair<encoding_list, float> optimizeCharstring(
