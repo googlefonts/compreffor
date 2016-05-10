@@ -18,7 +18,7 @@
 Tool to subroutinize a CFF OpenType font. Backed by a C++ binary.
 
 This file is a bootstrap for the C++ edition of the FontTools compreffor.
-It prepares the input data for the executable and reads back in the results,
+It prepares the input data for the extension and reads back in the results,
 applying them to the input font.
 
 Usage (command line):
@@ -27,15 +27,13 @@ Usage (command line):
 
 Usage (python):
 >>> font = TTFont("/path/to/font.otf")
->>> cxxCompressor.compreff(font, use_lib=False)
+>>> cxxCompressor.compreff(font)
 >>> font.save("/path/to/output.otf")
 """
 
 import argparse
 import array
-import ctypes
 import struct
-import subprocess
 import sys
 import time
 import os
@@ -43,13 +41,10 @@ from compreffor.pyCompressor import (
     Compreffor, CandidateSubr, tokenCost, human_size)
 from compreffor.testPyCompressor import (
     test_compression_integrity, test_call_depth)
+from compreffor import _compreffor as lib
 from fontTools.misc.py23 import BytesIO
 from fontTools.ttLib import TTFont
 
-if sys.platform == 'win32':
-    LIB_NAME = 'compreff.dll'
-else:
-    LIB_NAME = 'libcompreff.so'
 
 # default values:
 NSUBRS_LIMIT = 65533
@@ -153,7 +148,7 @@ def read_data(td, result_string):
     return (subrs, glyph_encodings)
 
 def interpret_data(td, results):
-    """Interpret the result array from a libcompreff call to
+    """Interpret the result array from a lib.compreff call to
     produce Python data structures."""
 
     class MutableSpace: pass
@@ -195,10 +190,10 @@ def interpret_data(td, results):
 
     return (subrs, glyph_encodings)
 
-def compreff(font, verbose=False, use_lib=False, **kwargs):
+def compreff(font, verbose=False, **kwargs):
     """Main function that compresses `font`, a TTFont object,
-    in place. All heavy lifting is passed off either to an
-    executable or shared library based on the use_lib argument."""
+    in place.
+    """
 
     full_start_time = start_time = time.time()
 
@@ -219,33 +214,15 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
     if 'nsubrs_limit' in kwargs and kwargs.get('nsubrs_limit') != None:
         max_subrs = kwargs.get('nsubrs_limit')
 
-    if use_lib:
-        lib_path = os.path.join(os.path.dirname(__file__), LIB_NAME)
-        libcompreff = ctypes.CDLL(lib_path)
-        libcompreff.compreff.restype = ctypes.POINTER(ctypes.c_uint32)
-        input_data = ctypes.c_char_p(write_data(td))
-        if verbose:
-            print("Produced data for C++ (delta %gs)" % (time.time() - start_time))
-            start_time = time.time()
-        results = libcompreff.compreff(input_data, 4)
-        if verbose:
-            print("Lib call returned (delta %gs)" % (time.time() - start_time))
-            start_time = time.time()
-        subrs, glyph_encodings = interpret_data(td, results)
-    else:
-        p = subprocess.Popen(
-                            call,
-                            stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE)
-        input_data = write_data(td)
-        if verbose:
-            print("Produced data for C++ (delta %gs)" % (time.time() - start_time))
-            start_time = time.time()
-        results, _ = p.communicate(input=input_data)
-        if verbose:
-            print("Executable returned (delta %gs)" % (time.time() - start_time))
-            start_time = time.time()
-        subrs, glyph_encodings = read_data(td, results)
+    input_data = write_data(td)
+    if verbose:
+        print("Produced data for C++ (delta %gs)" % (time.time() - start_time))
+        start_time = time.time()
+    results = lib.compreff(input_data, 4)
+    if verbose:
+        print("Lib call returned (delta %gs)" % (time.time() - start_time))
+        start_time = time.time()
+    subrs, glyph_encodings = interpret_data(td, results)
 
     if verbose:
         print("Extracted results (delta %gs)" % (time.time() - start_time))
@@ -385,8 +362,6 @@ if __name__ == '__main__':
                                                   " (defaults to 64K)")
     parser.add_argument('--generatecff', required=False, action='store_true',
                         dest='generate_cff', default=False)
-    parser.add_argument('--uselib', required=False, action='store_true',
-                        dest='use_lib', default=False)
 
     kwargs = vars(parser.parse_args())
 
