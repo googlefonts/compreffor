@@ -8,6 +8,13 @@ from distutils.dep_util import newer_group
 import pkg_resources
 
 
+try:
+    import fontTools
+except:
+    log.warn("*** Warning: compreffor requires fontTools, see:")
+    log.warn("    https://github.com/behdad/fonttools")
+
+
 # use Cython if available, else try use pre-generated .cpp sources
 cython_min_version = '0.24'
 try:
@@ -141,8 +148,8 @@ setup(
     cmdclass={
         'build_ext': custom_build_ext,
     },
-    install_requires=[
-        "fonttools>=3.0",
-    ],
+    # install_requires=[
+    #     "fonttools>=3.1",
+    # ],
     zip_safe=False,
 )
