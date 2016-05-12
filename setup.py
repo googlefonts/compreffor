@@ -6,6 +6,7 @@ from distutils.errors import DistutilsSetupError
 from distutils import log
 from distutils.dep_util import newer_group
 import pkg_resources
+import platform
 
 
 try:
@@ -124,7 +125,9 @@ extensions = [
             "default": [
                 "-std=c++0x", "-pthread",
                 "-Wextra", "-Wno-unused", "-Wno-unused-parameter",
-            ],
+                # pass extra compiler flags on OS X to enable support for C++11
+            ] + (["-stdlib=libc++", "-mmacosx-version-min=10.7"]
+                 if platform.system() == "Darwin" else []),
             "msvc": ["/EHsc", "/Zi"],
         },
         define_macros={
