@@ -528,7 +528,7 @@ class Compreffor(object):
                     item = psCharStrings.T2CharString(program=subr._program)
                     subrs_index.append(item)
         else:
-            for glyph, enc in encoding.iteritems():
+            for glyph, enc in encoding.items():
                 charstring = top_dict.CharStrings[glyph]
                 Compreffor.collapse_hintmask(charstring.program)
                 Compreffor.update_program(charstring.program, enc, gbias, lbias, 0)
