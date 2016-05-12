@@ -123,7 +123,7 @@ extensions = [
         depends=[os.path.join('cxx-src', 'cffCompressor.h')],
         extra_compile_args={
             "default": [
-                "-std=c++0x", "-pthread",
+                "-std=c++11", "-pthread",
                 "-Wextra", "-Wno-unused", "-Wno-unused-parameter",
                 # pass extra compiler flags on OS X to enable support for C++11
             ] + (["-stdlib=libc++", "-mmacosx-version-min=10.7"]
