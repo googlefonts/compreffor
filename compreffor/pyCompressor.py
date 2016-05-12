@@ -802,7 +802,8 @@ class Compreffor(object):
 
         # fix any nesting issues
         Compreffor.calc_nesting(gsubrs)
-        map(Compreffor.calc_nesting, lsubrs)
+        for subrs in lsubrs:
+            Compreffor.calc_nesting(subrs)
 
         too_nested = [s for s in itertools.chain(*lsubrs) if s._max_call_depth > nest_limit]
         too_nested.extend([s for s in gsubrs if s._max_call_depth > nest_limit])
