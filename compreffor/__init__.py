@@ -45,14 +45,12 @@ Compression Backends:
 There are 2 different ways the compreffor can be run.
     - First is a pure python approach, which can be selected from this module
       by passing method=Methods.Py. This backend is significantly slower than
-      the other 2 backends (~10-20x). The logic for this backend can be found
+      the other backend (~10-20x). The logic for this backend can be found
       in pyCompressor.py.
-    - Second is C++ extension module backed. With this method,
-      python calls the relevant functions directly from `libcompreff.so` rather
-      than starting an executable in another process. This is currently slower
-      than the second approach. This can be selected here using Methods.CxxLib
-      and again logic is in cxxCompressor.py, cffCompressor.h, and
-      cffCompressor.cc.
+    - Second is C++ extension module backed. With this method, python calls
+      the relevant functions by importing directly from `_compreffor.so`. This
+      is the default method=Methods.Cxx. The logic is in cxxCompressor.py,
+      cffCompressor.h, cffCompressor.cc and _compreffor.pyx.
 If a Compreffor is initialized with no method, Methods.NoPref is chosen. This
 method automatically chooses the fastest available backend (order is c++,
 py). Availability is dependent on the presence of the compiled module.
