@@ -259,7 +259,7 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
         start_time = time.time()
 
     # in order of charset
-    chstrings = map(lambda x: x.program, td.CharStrings.values())
+    chstrings = [x.program for x in td.CharStrings.values()]
     map(lambda x: Compreffor.collapse_hintmask(x), chstrings)
 
     for s in subrs:
