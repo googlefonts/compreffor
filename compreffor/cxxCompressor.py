@@ -260,7 +260,8 @@ def compreff(font, verbose=False, use_lib=False, **kwargs):
 
     # in order of charset
     chstrings = [x.program for x in td.CharStrings.values()]
-    map(lambda x: Compreffor.collapse_hintmask(x), chstrings)
+    for cs in chstrings:
+        Compreffor.collapse_hintmask(cs)
 
     for s in subrs:
         s.chstrings = chstrings
