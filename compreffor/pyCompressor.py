@@ -528,7 +528,7 @@ class Compreffor(object):
                     item = psCharStrings.T2CharString(program=subr._program)
                     subrs_index.append(item)
         else:
-            for glyph, enc in encoding.iteritems():
+            for glyph, enc in encoding.items():
                 charstring = top_dict.CharStrings[glyph]
                 Compreffor.collapse_hintmask(charstring.program)
                 Compreffor.update_program(charstring.program, enc, gbias, lbias, 0)
@@ -752,8 +752,8 @@ class Compreffor(object):
         if verbose:
             print("%d substrings unused or negative saving subrs" % len(bad_substrings))
 
-        def set_flatten(s): s._flatten = True
-        map(set_flatten, bad_substrings)
+        for s in bad_substrings:
+            s._flatten = True
 
         gsubrs = []
         lsubrs = [[] for _ in range(fdlen)]
@@ -798,15 +798,18 @@ class Compreffor(object):
 
         bad_substrings.extend([s[1] for s in subrs]) # add any leftover subrs to bad_substrings
 
-        map(set_flatten, bad_substrings)
+        for s in bad_substrings:
+            s._flatten = True
 
         # fix any nesting issues
         Compreffor.calc_nesting(gsubrs)
-        map(Compreffor.calc_nesting, lsubrs)
+        for subrs in lsubrs:
+            Compreffor.calc_nesting(subrs)
 
         too_nested = [s for s in itertools.chain(*lsubrs) if s._max_call_depth > nest_limit]
         too_nested.extend([s for s in gsubrs if s._max_call_depth > nest_limit])
-        map(set_flatten, too_nested)
+        for s in too_nested:
+            s._flatten = True
         bad_substrings.extend(too_nested)
         lsubrs = [[s for s in lsubrarr if s._max_call_depth <= nest_limit] for lsubrarr in lsubrs]
         gsubrs = [s for s in gsubrs if s._max_call_depth <= nest_limit]
@@ -817,8 +820,6 @@ class Compreffor(object):
             print("%d substrings being flattened" % len(bad_substrings))
 
         # reorganize to minimize call cost of most frequent subrs
-        def update_position(idx, subr): subr._position = idx
-
         gbias = psCharStrings.calcSubrBias(gsubrs)
         lbias = [psCharStrings.calcSubrBias(s) for s in lsubrs]
 
@@ -831,7 +832,8 @@ class Compreffor(object):
             elif bias == 32768:
                 subr_arr[:] = (subr_arr[2264:33901] + subr_arr[216:1240] +
                             subr_arr[0:216] + subr_arr[1240:2264] + subr_arr[33901:])
-            map(update_position, range(len(subr_arr)), subr_arr)
+            for idx, subr in enumerate(subr_arr):
+                subr._position = idx
 
         for subr in sorted(bad_substrings, key=lambda s: len(s)):
             # NOTE: it is important this is run in order so shorter
