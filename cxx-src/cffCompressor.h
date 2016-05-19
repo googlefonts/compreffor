@@ -19,10 +19,19 @@
 
 #include <assert.h>
 #include <forward_list>
-#include <future>
 #include <stdint.h>
 #include <string.h>
 #include <thread>
+
+/* If MinGW GCC is compiled with "win32" threads instead of "posix"
+ * it lacks the C++11 standard threading classes, so we need to include
+ * the "mingw-std-threads" header-only library from:
+ *
+ *     https://github.com/meganz/mingw-std-threads
+ */
+#if defined(__MINGW32__) && !defined(__WINPTHREADS_VERSION)
+#include "mingw-std-threads/mingw.thread.h"
+#endif
 
 #include <algorithm>
 #include <fstream>
@@ -147,12 +156,13 @@ void optimizeSubstrings(
                     std::list<substring_t>::iterator begin,
                     std::list<substring_t>::iterator end);
 
-std::vector<encoding_list> optimizeGlyphstrings(
+void optimizeGlyphstrings(
                     std::map<light_substring_t,
                     substring_t*> &substrMap,
                     charstring_pool_t &csPool,
                     unsigned start,
-                    unsigned stop);
+                    unsigned stop,
+                    std::vector<encoding_list>& result);
 
 std::pair<encoding_list, float> optimizeCharstring(
                     const_tokiter_t begin,
