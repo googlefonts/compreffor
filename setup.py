@@ -1,97 +1,158 @@
 #!/usr/bin/env python
 from __future__ import print_function
-from setuptools import setup
-from distutils.command.build import build
-from distutils.command.install_lib import install_lib
-from distutils.command.clean import clean
-from distutils.cmd import Command
-import sys
+from setuptools import setup, Extension
 import os
-import subprocess
+from distutils.errors import DistutilsSetupError
+from distutils import log
+from distutils.dep_util import newer_group
+import pkg_resources
+import platform
+
 
 try:
     import fontTools
 except:
-    print("*** Warning: compreffor requires fontTools, see:")
-    print("    https://github.com/behdad/fonttools")
+    log.warn("*** Warning: compreffor requires fontTools, see:")
+    log.warn("    https://github.com/behdad/fonttools")
 
-CURR_DIR = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
-CXX_SOURCES = os.path.join(CURR_DIR, 'cxx-src')
 
-# platform-specific executable name
-EXE_NAME = 'cffCompressor'
-if sys.platform == 'win32':
-    EXE_NAME += '.exe'
-
-# platform-specific shared library name
-if sys.platform == 'win32':
-    LIB_NAME = 'compreff.dll'
+# use Cython if available, else try use pre-generated .cpp sources
+cython_min_version = '0.24'
+try:
+    pkg_resources.require("cython >= %s" % cython_min_version)
+except pkg_resources.ResolutionError:
+    with_cython = False
+    log.info('Distribution mode: Compiling from Cython-generated .cpp sources.')
+    from setuptools.command.build_ext import build_ext
 else:
-    LIB_NAME = 'libcompreff.so'
-
-# make sure 'build_cxx' is called as part of 'build' command
-build.sub_commands.insert(0, ('build_cxx', lambda *a: True))
-
-
-class BuildCXX(Command):
-    description = "Build 'compreffor' C++ executable and shared library."
-    user_options = []
-
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        subprocess.check_call(['make'], cwd=CXX_SOURCES)
-        executable = os.path.join(CXX_SOURCES, "..", "compreffor", EXE_NAME)
-        library = os.path.join(CXX_SOURCES, "..", "compreffor", LIB_NAME)
-        assert os.path.exists(executable)
-        assert os.path.exists(library)
-        build_py = self.get_finalized_command('build_py')
-        dest = os.path.join(build_py.build_lib, 'compreffor')
-        self.mkpath(dest)
-        self.copy_file(executable, dest)
-        self.copy_file(library, dest)
+    with_cython = True
+    log.info('Development mode: Compiling Cython modules from .pyx sources.')
+    from Cython.Distutils import build_ext
 
 
-class CleanCommand(clean):
+class custom_build_ext(build_ext):
+    """ Custom 'build_ext' command which allows to pass compiler-specific
+    'extra_compile_args', 'define_macros' and 'undef_macros' options.
+    """
 
-    user_options = clean.user_options + [
-        ('cxx', None, "run 'make clean' to remove C++ build output")
-    ]
+    def build_extension(self, ext):
+        sources = ext.sources
+        if sources is None or not isinstance(sources, (list, tuple)):
+            raise DistutilsSetupError(
+                  "in 'ext_modules' option (extension '%s'), "
+                  "'sources' must be present and must be "
+                  "a list of source filenames" % ext.name)
+        sources = list(sources)
 
-    def initialize_options(self):
-        clean.initialize_options(self)
-        self.cxx = None
+        ext_path = self.get_ext_fullpath(ext.name)
+        depends = sources + ext.depends
+        if not (self.force or newer_group(depends, ext_path, 'newer')):
+            log.debug("skipping '%s' extension (up-to-date)", ext.name)
+            return
+        else:
+            log.info("building '%s' extension", ext.name)
 
-    def run(self):
-        clean.run(self)
-        if self.cxx or self.all:
-            subprocess.check_call(['make', 'clean'], cwd=CXX_SOURCES)
+        # do compiler specific customizations
+        compiler_type = self.compiler.compiler_type
+
+        if isinstance(ext.extra_compile_args, dict):
+            extra_args_dict = ext.extra_compile_args or {}
+            if compiler_type in extra_args_dict:
+                extra_args = extra_args_dict[compiler_type]
+            else:
+                extra_args = extra_args_dict.get("default", [])
+        else:
+            extra_args = ext.extra_compile_args or []
+
+        if isinstance(ext.define_macros, dict):
+            macros_dict = ext.define_macros or {}
+            if compiler_type in macros_dict:
+                macros = macros_dict[compiler_type]
+            else:
+                macros = macros_dict.get("default", [])
+        else:
+            macros = ext.define_macros or []
+
+        if isinstance(ext.undef_macros, dict):
+            undef_macros_dict = ext.undef_macros
+            for tp, undef in undef_macros_dict.items():
+                if tp == compiler_type:
+                    macros.append((undef,))
+        else:
+            for undef in ext.undef_macros:
+                macros.append((undef,))
+
+        # compile the source code to object files.
+        objects = self.compiler.compile(sources,
+                                        output_dir=self.build_temp,
+                                        macros=macros,
+                                        include_dirs=ext.include_dirs,
+                                        debug=self.debug,
+                                        extra_postargs=extra_args,
+                                        depends=ext.depends)
+
+        # Now link the object files together into a "shared object"
+        if ext.extra_objects:
+            objects.extend(ext.extra_objects)
+        # TODO: do compiler-specific extra link args?
+        extra_args = ext.extra_link_args or []
+
+        # Detect target language, if not provided
+        language = ext.language or self.compiler.detect_language(sources)
+
+        self.compiler.link_shared_object(
+            objects, ext_path,
+            libraries=self.get_libraries(ext),
+            library_dirs=ext.library_dirs,
+            runtime_library_dirs=ext.runtime_library_dirs,
+            extra_postargs=extra_args,
+            export_symbols=self.get_export_symbols(ext),
+            debug=self.debug,
+            build_temp=self.build_temp,
+            target_lang=language)
 
 
-class InstallLibCommand(install_lib):
-
-    def build(self):
-        install_lib.build(self)
-        if not self.skip_build:
-            self.run_command('build_cxx')
-
+extensions = [
+    Extension(
+        "compreffor._compreffor",
+        sources=[
+            os.path.join('cython-src', (
+                '_compreffor' + ('.pyx' if with_cython else '.cpp'))),
+            os.path.join('cxx-src', "cffCompressor.cc"),
+        ],
+        depends=[os.path.join('cxx-src', 'cffCompressor.h')],
+        extra_compile_args={
+            "default": [
+                "-std=c++11", "-pthread",
+                "-Wextra", "-Wno-unused", "-Wno-unused-parameter",
+                # pass extra compiler flags on OS X to enable support for C++11
+            ] + (["-stdlib=libc++", "-mmacosx-version-min=10.7"]
+                 if platform.system() == "Darwin" else []),
+            "msvc": ["/EHsc", "/Zi"],
+        },
+        define_macros={
+            # On Windows Python 2.7, pyconfig.h defines "hypot" as "_hypot",
+            # This clashes with GCC's cmath, and causes compilation errors when
+            # building under MinGW: http://bugs.python.org/issue11566
+            "mingw32": [("_hypot", "hypot")],
+        },
+        language="c++",
+    ),
+]
 
 setup(
     name="compreffor",
-    version="0.1.0",
+    version="0.2.0",
     description="A CFF subroutinizer for fontTools.",
     author="Sam Fishman",
     license="Apache 2.0",
     packages=["compreffor"],
-    package_data={"compreffor": [EXE_NAME, LIB_NAME]},
+    ext_modules=extensions,
     cmdclass={
-           'build_cxx': BuildCXX,
-           'clean': CleanCommand,
-           'install_lib': InstallLibCommand,
-        },
+        'build_ext': custom_build_ext,
+    },
+    # install_requires=[
+    #     "fonttools>=3.1",
+    # ],
     zip_safe=False,
 )

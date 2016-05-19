@@ -8,4 +8,5 @@ exclude compreffor/libcompreff.so
 recursive-include compreffor *.py
 recursive-include tools *.py
 recursive-include cxx-src *.cc *.h
+recursive-include cython-src *.pyx *.pyd *.cpp
 include cxx-src/Makefile

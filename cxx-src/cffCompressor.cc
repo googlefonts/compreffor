@@ -365,7 +365,8 @@ unsigned charstring_pool_t::packEncoding(
 
 uint32_t* charstring_pool_t::getResponse(
               std::list<substring_t>& subrs,
-              std::vector<encoding_list>& glyphEncodings) {
+              std::vector<encoding_list>& glyphEncodings,
+              unsigned& outputLength) {
   unsigned length = 1 + subrs.size() * 3;
   for (const substring_t& subr : subrs) {
     length += 1 + subr.encoding.size() * 2;
@@ -373,6 +374,7 @@ uint32_t* charstring_pool_t::getResponse(
   for (const encoding_list& glyphEnc : glyphEncodings) {
     length += 1 + glyphEnc.size() * 2;
   }
+  outputLength = length;
 
   uint32_t* buffer = new uint32_t[length];
   unsigned pos = 0;
@@ -1099,16 +1101,16 @@ charstring_pool_t CharstringPoolFactoryFromString(
   return csPool;
 }
 
-extern "C" uint32_t* compreff(unsigned char* dataStream, int numRounds) {
+extern "C" uint32_t* compreff(unsigned char* dataStream, int numRounds, unsigned& outputLength) {
   charstring_pool_t csPool = CharstringPoolFactoryFromString(dataStream,
                                                              numRounds);
   std::list<substring_t> subrs = csPool.getSubstrings();
   std::vector<encoding_list> glyphEncodings;
   csPool.subroutinize(subrs, glyphEncodings);
-  return csPool.getResponse(subrs, glyphEncodings);
+  return csPool.getResponse(subrs, glyphEncodings, outputLength);
 }
 
-extern "C" void unload(char* response) {
+extern "C" void unload(uint32_t* response) {
   free(response);
 }
 
