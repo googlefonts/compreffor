@@ -52,7 +52,7 @@ class TestCffCompressor(unittest.TestCase):
 
         expected_subr_length = 5 # subr is (0, 1, 20, 21, 22)
 
-        for glyph_enc in encs.itervalues():
+        for glyph_enc in encs.values():
             self.assertTrue(any(cs[1].length == expected_subr_length for cs in glyph_enc))
 
 
