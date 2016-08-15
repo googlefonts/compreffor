@@ -265,7 +265,7 @@ class SubstringFinder(object):
     def process_chstrings(self, glyph_set):
         """Remap the charstring alphabet and put into self.data"""
 
-        self.glyph_set_keys = glyph_set.keys()
+        self.glyph_set_keys = sorted(glyph_set.keys())
 
         keymap = {} # maps charstring tokens -> simple integer alphabet
 
