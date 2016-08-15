@@ -3,7 +3,7 @@ from cpython cimport array
 import array
 
 
-cdef extern from "../cxx-src/cffCompressor.h":
+cdef extern from "../cxx/cffCompressor.h":
     uint32_t* _compreff "compreff" (
         unsigned char* dataStream, int numRounds,
         unsigned& outputLength) except +

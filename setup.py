@@ -116,11 +116,11 @@ extensions = [
     Extension(
         "compreffor._compreffor",
         sources=[
-            os.path.join('cython-src', (
+            os.path.join('src', 'cython', (
                 '_compreffor' + ('.pyx' if with_cython else '.cpp'))),
-            os.path.join('cxx-src', "cffCompressor.cc"),
+            os.path.join('src', 'cxx', "cffCompressor.cc"),
         ],
-        depends=[os.path.join('cxx-src', 'cffCompressor.h')],
+        depends=[os.path.join('src', 'cxx', 'cffCompressor.h')],
         extra_compile_args={
             "default": [
                 "-std=c++0x", "-pthread",
@@ -146,6 +146,7 @@ setup(
     description="A CFF subroutinizer for fontTools.",
     author="Sam Fishman",
     license="Apache 2.0",
+    package_dir={'': 'src/python'},
     packages=["compreffor"],
     ext_modules=extensions,
     cmdclass={

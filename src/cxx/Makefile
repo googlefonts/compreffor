@@ -5,7 +5,7 @@ CXXFLAGS += -DDEBUG -g
 CXXSOFLAGS = $(CXXFLAGS) -shared
 CC = g++
 DEPS = cffCompressor.h
-BIN = ../compreffor
+BIN = ../python/compreffor
 
 ifeq ($(OS),Windows_NT)
     uname_S := Windows

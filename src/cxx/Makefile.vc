@@ -1,5 +1,5 @@
 CXXFLAGS = /nologo /O2 /EHsc /Zi
-BIN = ..\compreffor
+BIN = ..\python\compreffor
 
 SRC_NAME = cffCompressor
 LIB_NAME = compreff
