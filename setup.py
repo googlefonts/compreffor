@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
-from setuptools import setup, Extension
+from setuptools import setup, find_packages, Extension
 import os
 from distutils.errors import DistutilsSetupError
 from distutils import log
@@ -147,7 +147,7 @@ setup(
     author="Sam Fishman",
     license="Apache 2.0",
     package_dir={'': 'src/python'},
-    packages=["compreffor"],
+    packages=find_packages('src/python'),
     ext_modules=extensions,
     cmdclass={
         'build_ext': custom_build_ext,
