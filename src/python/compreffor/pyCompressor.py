@@ -18,14 +18,14 @@
 Tool to subroutinize a CFF OpenType font.
 
 Usage (command line):
->>> ./pyCompressor.py /path/to/font.otf
+>> ./pyCompressor.py /path/to/font.otf
 # font written to /path/to/font.compressed.otf
 
 Usage (in Python):
->>> font = TTFont(path_to_font)
->>> compreffor = Compreffor(font)
->>> compreffor.compress()
->>> font.save(path_to_output)
+>> font = TTFont(path_to_font)
+>> compreffor = Compreffor(font)
+>> compreffor.compress()
+>> font.save(path_to_output)
 """
 
 import os
@@ -421,10 +421,10 @@ class Compreffor(object):
     Manager class for the compreffor.
 
     Usage:
-    >>> font = TTFont(path_to_font)
-    >>> compreffor = Compreffor(font)
-    >>> compreffor.compress()
-    >>> font.save("/path/to/output.otf")
+    >> font = TTFont(path_to_font)
+    >> compreffor = Compreffor(font)
+    >> compreffor.compress()
+    >> font.save("/path/to/output.otf")
     """
 
     SINGLE_PROCESS = False

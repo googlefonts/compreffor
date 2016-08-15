@@ -22,13 +22,13 @@ It prepares the input data for the extension and reads back in the results,
 applying them to the input font.
 
 Usage (command line):
->>> ./cxxCompressor.py /path/to/font.otf
+>> ./cxxCompressor.py /path/to/font.otf
 # font written to /path/to/font.compressed.otf
 
 Usage (python):
->>> font = TTFont("/path/to/font.otf")
->>> cxxCompressor.compreff(font)
->>> font.save("/path/to/output.otf")
+>> font = TTFont("/path/to/font.otf")
+>> cxxCompressor.compreff(font)
+>> font.save("/path/to/output.otf")
 """
 
 import argparse
