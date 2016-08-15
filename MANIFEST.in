@@ -1,12 +1,15 @@
 include setup.py
 include LICENSE
 include README.md
-exclude compreffor/cffCompressor
-exclude compreffor/cffCompressor.exe
-exclude compreffor/compreff.dll
-exclude compreffor/libcompreff.so
-recursive-include compreffor *.py
+
+recursive-include src/python *.py
 recursive-include tools *.py
-recursive-include cxx-src *.cc *.h
-recursive-include cython-src *.pyx *.pyd *.cpp
-include cxx-src/Makefile
+recursive-include src/cxx *.cc *.h *.def
+recursive-include src/cython *.pyx *.pxd *.cpp
+
+include src/cxx/Makefile
+include src/cxx/Makefile.vc
+
+recursive-include src/cxx/mingw-std-threads/tests *.cpp *.txt
+include src/cxx/mingw-std-threads/LICENSE
+include src/cxx/mingw-std-threads/README.md
