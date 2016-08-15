@@ -42,6 +42,7 @@ class DummyGlyphSet(collections.MutableMapping):
 
         def __init__(self, data):
             self.program = data
+            self._glyph = self
 
         def decompile(self):
             pass
