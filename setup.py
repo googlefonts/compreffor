@@ -7,6 +7,13 @@ from distutils import log
 from distutils.dep_util import newer_group
 import pkg_resources
 import platform
+import sys
+
+
+needs_pytest = {'pytest', 'test'}.intersection(sys.argv)
+pytest_runner = ['pytest_runner'] if needs_pytest else []
+needs_wheel = {'bdist_wheel'}.intersection(sys.argv)
+wheel = ['wheel'] if needs_wheel else []
 
 
 # use Cython if available, else try use pre-generated .cpp sources
@@ -145,6 +152,10 @@ setup(
     cmdclass={
         'build_ext': custom_build_ext,
     },
+    setup_requires=pytest_runner + wheel,
+    tests_require=[
+        'pytest>=2.8',
+    ],
     # install_requires=[
     #     "fonttools>=3.1",
     # ],
