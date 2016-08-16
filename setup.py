@@ -35,6 +35,18 @@ class custom_build_ext(build_ext):
     'extra_compile_args', 'define_macros' and 'undef_macros' options.
     """
 
+    def finalize_options(self):
+        build_ext.finalize_options(self)
+        if self.compiler is None:
+            # we use this variable with tox to build using GCC on Windows.
+            # https://bitbucket.org/hpk42/tox/issues/274/specify-compiler
+            self.compiler = os.environ.get("DISTUTILS_COMPILER", None)
+        if self.compiler == "mingw32":
+            # workaround for virtualenv changing order of libary_dirs on
+            # Windows, which makes gcc fail to link with the correct libpython
+            # https://github.com/mingwpy/mingwpy.github.io/issues/31
+            self.library_dirs.insert(0, os.path.join(sys.exec_prefix, 'libs'))
+
     def build_extension(self, ext):
         sources = ext.sources
         if sources is None or not isinstance(sources, (list, tuple)):
