@@ -9,13 +9,6 @@ import pkg_resources
 import platform
 
 
-try:
-    import fontTools
-except:
-    log.warn("*** Warning: compreffor requires fontTools, see:")
-    log.warn("    https://github.com/behdad/fonttools")
-
-
 # use Cython if available, else try use pre-generated .cpp sources
 cython_min_version = '0.24'
 try:
