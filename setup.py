@@ -140,7 +140,8 @@ extensions = [
     ),
 ]
 
-setup(
+
+setup_params = dict(
     name="compreffor",
     version="0.2.0",
     description="A CFF subroutinizer for fontTools.",
@@ -161,3 +162,7 @@ setup(
     # ],
     zip_safe=False,
 )
+
+
+if __name__ == "__main__":
+    setup(**setup_params)
