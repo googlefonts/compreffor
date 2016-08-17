@@ -155,7 +155,7 @@ extensions = [
 
 setup_params = dict(
     name="compreffor",
-    version="0.2.0",
+    version="0.3.0",
     description="A CFF subroutinizer for fontTools.",
     author="Sam Fishman",
     license="Apache 2.0",
