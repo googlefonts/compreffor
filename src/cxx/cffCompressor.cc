@@ -25,7 +25,8 @@
 const unsigned int_size = sizeof(int_type);
 const float K = 0.1;
 const float ALPHA = 0.1;
-const unsigned NUM_THREADS = 100;
+const unsigned hardware_threads = std::thread::hardware_concurrency();
+const unsigned NUM_THREADS = hardware_threads != 0 ? hardware_threads : 1;
 const unsigned DEFAULT_NUM_ROUNDS = 4;
 
 // token_t ============
