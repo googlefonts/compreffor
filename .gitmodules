@@ -1,3 +1,6 @@
 [submodule "cxx-src/mingw-std-threads"]
 	path = src/cxx/mingw-std-threads
 	url = https://github.com/meganz/mingw-std-threads
+[submodule "multibuild"]
+	path = multibuild
+	url = https://github.com/matthew-brett/multibuild
