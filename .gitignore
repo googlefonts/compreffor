@@ -13,4 +13,7 @@ pip-delete-this-directory.txt
 
 *.o
 *.so
-cffCompressor
+
+.eggs/
+.tox/
+.cache/
