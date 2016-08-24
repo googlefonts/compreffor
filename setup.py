@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 from __future__ import print_function
-from setuptools import setup, Extension
+from setuptools import setup, find_packages, Extension
 import os
 from distutils.errors import DistutilsSetupError
 from distutils import log
 from distutils.dep_util import newer_group
 import pkg_resources
 import platform
+import sys
 
 
-try:
-    import fontTools
-except:
-    log.warn("*** Warning: compreffor requires fontTools, see:")
-    log.warn("    https://github.com/behdad/fonttools")
+needs_pytest = {'pytest', 'test'}.intersection(sys.argv)
+pytest_runner = ['pytest_runner'] if needs_pytest else []
+needs_wheel = {'bdist_wheel'}.intersection(sys.argv)
+wheel = ['wheel'] if needs_wheel else []
 
 
 # use Cython if available, else try use pre-generated .cpp sources
@@ -34,6 +34,18 @@ class custom_build_ext(build_ext):
     """ Custom 'build_ext' command which allows to pass compiler-specific
     'extra_compile_args', 'define_macros' and 'undef_macros' options.
     """
+
+    def finalize_options(self):
+        build_ext.finalize_options(self)
+        if self.compiler is None:
+            # we use this variable with tox to build using GCC on Windows.
+            # https://bitbucket.org/hpk42/tox/issues/274/specify-compiler
+            self.compiler = os.environ.get("DISTUTILS_COMPILER", None)
+        if self.compiler == "mingw32":
+            # workaround for virtualenv changing order of libary_dirs on
+            # Windows, which makes gcc fail to link with the correct libpython
+            # https://github.com/mingwpy/mingwpy.github.io/issues/31
+            self.library_dirs.insert(0, os.path.join(sys.exec_prefix, 'libs'))
 
     def build_extension(self, ext):
         sources = ext.sources
@@ -116,11 +128,11 @@ extensions = [
     Extension(
         "compreffor._compreffor",
         sources=[
-            os.path.join('cython-src', (
+            os.path.join('src', 'cython', (
                 '_compreffor' + ('.pyx' if with_cython else '.cpp'))),
-            os.path.join('cxx-src', "cffCompressor.cc"),
+            os.path.join('src', 'cxx', "cffCompressor.cc"),
         ],
-        depends=[os.path.join('cxx-src', 'cffCompressor.h')],
+        depends=[os.path.join('src', 'cxx', 'cffCompressor.h')],
         extra_compile_args={
             "default": [
                 "-std=c++0x", "-pthread",
@@ -140,19 +152,29 @@ extensions = [
     ),
 ]
 
-setup(
+
+setup_params = dict(
     name="compreffor",
-    version="0.2.0",
+    version="0.3.0",
     description="A CFF subroutinizer for fontTools.",
     author="Sam Fishman",
     license="Apache 2.0",
-    packages=["compreffor"],
+    package_dir={'': 'src/python'},
+    packages=find_packages('src/python'),
     ext_modules=extensions,
     cmdclass={
         'build_ext': custom_build_ext,
     },
+    setup_requires=pytest_runner + wheel,
+    tests_require=[
+        'pytest>=2.8',
+    ],
     # install_requires=[
     #     "fonttools>=3.1",
     # ],
     zip_safe=False,
 )
+
+
+if __name__ == "__main__":
+    setup(**setup_params)

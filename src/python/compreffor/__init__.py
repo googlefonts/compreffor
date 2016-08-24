@@ -21,11 +21,11 @@ outputted font file. In addition to providing a Python
 interface, this tool can be used on the command line.
 
 Usage (python):
->>> font = TTFont(filename)
->>> options = { ... }
->>> comp = Compreffor(font, method=compreffor.Methods.Cxx, **options)
->>> comp.compress()
->>> font.save(filename)
+>> font = TTFont(filename)
+>> options = { ... }
+>> comp = Compreffor(font, method=compreffor.Methods.Cxx, **options)
+>> comp.compress()
+>> font.save(filename)
 
 Options:
 When initializing a Compreffor object, options can be set using
@@ -51,60 +51,44 @@ There are 2 different ways the compreffor can be run.
       the relevant functions by importing directly from `_compreffor.so`. This
       is the default method=Methods.Cxx. The logic is in cxxCompressor.py,
       cffCompressor.h, cffCompressor.cc and _compreffor.pyx.
-If a Compreffor is initialized with no method, Methods.NoPref is chosen. This
-method automatically chooses the fastest available backend (order is c++,
-py). Availability is dependent on the presence of the compiled module.
 
 Usage (command line):
 To use on the command line, pyCompressor.py or cxxCompressor.py must be called
 directly rather than through this file. The two offer almost identical options,
 which can be described in the following way:
->>> ./pyCompressor.py -h
+>> ./pyCompressor.py -h
 ...
->>> ./cxxCompressor.py -h
+>> ./cxxCompressor.py -h
 ...
 
 In both versions, the output goes to a file in the same directory
 as the original, but with .compressed appended just before the file
 extension. Example usage:
->>> ./cxxCompressor.py /path/to/font.otf
+>> ./cxxCompressor.py /path/to/font.otf
 ...
 # font written to /path/to/font.compressed.otf
 """
 
 from compreffor import cxxCompressor, pyCompressor
 
-try:
-    from compreffor import _compreffor
-except ImportError:
-    use_cxx = False
-else:
-    use_cxx = True
-
 
 class Methods:
-    NoPref, Py, Cxx = range(3)
+    Py, Cxx = range(2)
 
 
 class Compreffor(object):
-    def __init__(self, font, method=Methods.NoPref, **options):
+    def __init__(self, font, method=Methods.Cxx, **options):
         self.font = font
         self.method = method
         self.options = options
 
     def compress(self):
-        if self.method == Methods.NoPref:
-            # choose fastest available method
-            if use_cxx:
-                self.run_cxx()
-            else:
-                self.run_py()
-        elif self.method == Methods.Py:
+        if self.method == Methods.Py:
             self.run_py()
         elif self.method == Methods.Cxx:
             self.run_cxx()
         else:
-            assert 0
+            raise ValueError("Invalid method: %r" % self.method)
 
     def run_py(self):
         compreffor = pyCompressor.Compreffor(self.font, **self.options)

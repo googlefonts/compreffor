@@ -18,14 +18,14 @@
 Tool to subroutinize a CFF OpenType font.
 
 Usage (command line):
->>> ./pyCompressor.py /path/to/font.otf
+>> ./pyCompressor.py /path/to/font.otf
 # font written to /path/to/font.compressed.otf
 
 Usage (in Python):
->>> font = TTFont(path_to_font)
->>> compreffor = Compreffor(font)
->>> compreffor.compress()
->>> font.save(path_to_output)
+>> font = TTFont(path_to_font)
+>> compreffor = Compreffor(font)
+>> compreffor.compress()
+>> font.save(path_to_output)
 """
 
 import os
@@ -265,7 +265,7 @@ class SubstringFinder(object):
     def process_chstrings(self, glyph_set):
         """Remap the charstring alphabet and put into self.data"""
 
-        self.glyph_set_keys = glyph_set.keys()
+        self.glyph_set_keys = sorted(glyph_set.keys())
 
         keymap = {} # maps charstring tokens -> simple integer alphabet
 
@@ -421,10 +421,10 @@ class Compreffor(object):
     Manager class for the compreffor.
 
     Usage:
-    >>> font = TTFont(path_to_font)
-    >>> compreffor = Compreffor(font)
-    >>> compreffor.compress()
-    >>> font.save("/path/to/output.otf")
+    >> font = TTFont(path_to_font)
+    >> compreffor = Compreffor(font)
+    >> compreffor.compress()
+    >> font.save("/path/to/output.otf")
     """
 
     SINGLE_PROCESS = False
@@ -1027,7 +1027,7 @@ def human_size(num):
 def main(filename=None, comp_fname=None, test=False, decompress=False,
          verbose=False, check=False, generate_cff=False, recursive=False,
          **comp_kwargs):
-    from testPyCompressor import test_compression_integrity, test_call_depth
+    from compreffor.test.util import check_compression_integrity, check_call_depth
 
     if test:
         from testPyCompressor import TestCffCompressor
@@ -1066,8 +1066,8 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
                     (os.path.basename(out_name), human_size(orig_size - comp_size)))
 
             if check:
-                test_compression_integrity(filename, out_name)
-                test_call_depth(out_name)
+                check_compression_integrity(filename, out_name)
+                check_call_depth(out_name)
 
         if recursive:
             for root, dirs, files in os.walk(filename):
@@ -1078,8 +1078,8 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
             handle_font(filename)
 
     if check and comp_fname != None:
-        test_compression_integrity(filename, comp_fname)
-        test_call_depth(comp_fname)
+        check_compression_integrity(filename, comp_fname)
+        check_call_depth(comp_fname)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

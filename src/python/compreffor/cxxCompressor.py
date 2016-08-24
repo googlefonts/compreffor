@@ -22,13 +22,13 @@ It prepares the input data for the extension and reads back in the results,
 applying them to the input font.
 
 Usage (command line):
->>> ./cxxCompressor.py /path/to/font.otf
+>> ./cxxCompressor.py /path/to/font.otf
 # font written to /path/to/font.compressed.otf
 
 Usage (python):
->>> font = TTFont("/path/to/font.otf")
->>> cxxCompressor.compreff(font)
->>> font.save("/path/to/output.otf")
+>> font = TTFont("/path/to/font.otf")
+>> cxxCompressor.compreff(font)
+>> font.save("/path/to/output.otf")
 """
 
 import argparse
@@ -39,8 +39,8 @@ import time
 import os
 from compreffor.pyCompressor import (
     Compreffor, CandidateSubr, tokenCost, human_size)
-from compreffor.testPyCompressor import (
-    test_compression_integrity, test_call_depth)
+from compreffor.test.util import (
+    check_compression_integrity, check_call_depth)
 from compreffor import _compreffor as lib
 from fontTools.misc.py23 import BytesIO
 from fontTools.ttLib import TTFont
@@ -314,8 +314,8 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
                     (os.path.basename(out_name), human_size(orig_size - comp_size)))
 
             if check:
-                test_compression_integrity(filename, out_name)
-                test_call_depth(out_name)
+                check_compression_integrity(filename, out_name)
+                check_call_depth(out_name)
 
         if recursive:
             for root, dirs, files in os.walk(filename):
@@ -326,8 +326,8 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
             handle_font(filename)
 
     if check and comp_fname != None:
-        test_compression_integrity(filename, comp_fname)
-        test_call_depth(comp_fname)
+        check_compression_integrity(filename, comp_fname)
+        check_call_depth(comp_fname)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
