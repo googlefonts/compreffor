@@ -87,19 +87,12 @@ artifacts:
   # archive the generated packages in the ci.appveyor.com build report
   - path: .tox\dist\*.whl
 
-#### Please replace the secure 'auth_token' below with your own.
-#### First, you need to generate a Github Personal API access token at
-#### https://github.com/settings/tokens, selecting scope 'public_repo'.
-#### Then, you encrypt it using https://ci.appveyor.com/tools/encrypt
-#### and paste it below.
-#### More info at: https://www.appveyor.com/docs/deployment/github/
-#
-# deploy:
-#   # Deploy wheels on tags to GitHub Releases
-#   - provider: GitHub
-#     auth_token:
-#       secure: NDuEsX2sqAbFegVqSkL45mJyfzirm14zt4EHSmErI0AbJvZQftFaarVqar0WAfiL
-#     draft: false
-#     prerelease: false
-#     on:
-#       appveyor_repo_tag: true
+deploy:
+  # Deploy wheels on tags to GitHub Releases
+  - provider: GitHub
+    auth_token:
+      secure: v7og3VSU6oko1daRt5IhhUhZwLWtb/MozxvcjmTmxVXK8etcOlCC1KkOfMyliFri
+    draft: false
+    prerelease: false
+    on:
+      appveyor_repo_tag: true
