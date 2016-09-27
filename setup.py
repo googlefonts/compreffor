@@ -169,9 +169,9 @@ setup_params = dict(
     tests_require=[
         'pytest>=2.8',
     ],
-    # install_requires=[
-    #     "fonttools>=3.1",
-    # ],
+    install_requires=[
+        "fonttools>=3.1",
+    ],
     zip_safe=False,
 )
 
