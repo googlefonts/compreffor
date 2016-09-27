@@ -1,1 +1,1 @@
-https://github.com/behdad/fonttools/archive/6ae2a9200ee665c244dbc045d3d4778129f08c06.zip
+fonttools==3.1.1
