@@ -306,7 +306,8 @@ def main(filename=None, comp_fname=None, test=False, decompress=False,
 
             if generate_cff:
                 # save CFF version
-                font['CFF '].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], 'w'), None)
+                with open(os.path.splitext(out_name)[0] + ".cff", 'wb') as f:
+                    font['CFF '].cff.compile(f, None)
 
             comp_size = os.path.getsize(out_name)
             print("Compressed to %s -- saved %s" %
