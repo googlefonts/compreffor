@@ -152,11 +152,14 @@ extensions = [
     ),
 ]
 
+with open('README.rst', 'r') as f:
+    long_description = f.read()
 
 setup_params = dict(
     name="compreffor",
     version="0.3.0",
     description="A CFF subroutinizer for fontTools.",
+    long_description=long_description,
     author="Sam Fishman",
     license="Apache 2.0",
     package_dir={'': 'src/python'},
