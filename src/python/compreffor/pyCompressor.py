@@ -34,7 +34,6 @@ import itertools
 import unittest
 import functools
 import sys
-import heapq
 import time
 import multiprocessing
 import math
