@@ -34,7 +34,6 @@ Usage (python):
 import argparse
 import array
 import struct
-import sys
 import time
 import os
 from compreffor.pyCompressor import (
