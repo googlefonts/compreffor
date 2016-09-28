@@ -41,12 +41,8 @@ from collections import deque
 from fontTools import cffLib
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
-from fontTools.misc.py23 import basestring
+from fontTools.misc.py23 import range, basestring
 
-try:
-    range = xrange
-except:
-    pass
 
 SINGLE_BYTE_OPS = set(['hstem',
                        'vstem',
