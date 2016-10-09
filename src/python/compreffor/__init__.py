@@ -72,27 +72,37 @@ extension. Example usage:
 from compreffor import cxxCompressor, pyCompressor
 
 
+def compress(ttFont, method_python=False, **options):
+    """ Subroutinize TTFont instance in-place using the C++ Compreffor.
+    If 'method_python' is True, use the slower, pure-Python Compreffor.
+    """
+    if method_python:
+        pyCompressor.Compreffor(ttFont, **options).compress()
+    else:
+        cxxCompressor.compreff(ttFont, **options)
+
+
+# The `Methods` and `Compreffor` classes are now deprecated, but we keep
+# them here for backward compatibility
+
+
 class Methods:
     Py, Cxx = range(2)
 
 
 class Compreffor(object):
     def __init__(self, font, method=Methods.Cxx, **options):
+        import warnings
+        warnings.warn("'Compreffor' class is deprecated; use 'compress' function "
+                      "instead", UserWarning)
         self.font = font
         self.method = method
         self.options = options
 
     def compress(self):
         if self.method == Methods.Py:
-            self.run_py()
+            compress(self.font, method_python=True, **self.options)
         elif self.method == Methods.Cxx:
-            self.run_cxx()
+            compress(self.font, method_python=False, **self.options)
         else:
             raise ValueError("Invalid method: %r" % self.method)
-
-    def run_py(self):
-        compreffor = pyCompressor.Compreffor(self.font, **self.options)
-        compreffor.compress()
-
-    def run_cxx(self):
-        cxxCompressor.compreff(self.font, **self.options)
