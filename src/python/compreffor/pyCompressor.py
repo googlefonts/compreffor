@@ -28,10 +28,7 @@ Usage (in Python):
 >> font.save(path_to_output)
 """
 
-import os
-import argparse
 import itertools
-import unittest
 import functools
 import sys
 import time
@@ -1013,7 +1010,6 @@ def compreff(font, **options):
     Compreffor(font, **options).compress()
 
 
-
 def human_size(num):
     """Return a number of bytes in human-readable units"""
 
@@ -1024,112 +1020,3 @@ def human_size(num):
         else:
             num /= 1024.0
     return '%3.1f %s' % (num, 'GB')
-
-def main(filename=None, comp_fname=None, test=False, decompress=False,
-         verbose=False, check=False, generate_cff=False, recursive=False,
-         **comp_kwargs):
-    from compreffor.test.util import check_compression_integrity, check_call_depth
-
-    if test:
-        from testPyCompressor import TestCffCompressor
-        test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
-        unittest.TextTestRunner().run(test_suite)
-
-    if filename and comp_fname == None:
-        def handle_font(font_name):
-            font = TTFont(font_name)
-            orig_size = os.path.getsize(font_name)
-
-            if decompress:
-                from fontTools import subset
-                options = subset.Options()
-                options.desubroutinize = True
-                subsetter = subset.Subsetter(options=options)
-                subsetter.populate(glyphs=font.getGlyphOrder())
-                subsetter.subset(font)
-
-            if verbose:
-                print("Compressing font through iterative_encode:")
-            out_name = "%s.compressed%s" % os.path.splitext(font_name)
-
-            compreffor = Compreffor(font, verbose=verbose, **comp_kwargs)
-            compreffor.compress()
-
-            # save compressed font
-            font.save(out_name)
-
-            if generate_cff:
-                # save CFF version
-                font["CFF "].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], "w"), None)
-
-            comp_size = os.path.getsize(out_name)
-            print("Compressed to %s -- saved %s" %
-                    (os.path.basename(out_name), human_size(orig_size - comp_size)))
-
-            if check:
-                check_compression_integrity(filename, out_name)
-                check_call_depth(out_name)
-
-        if recursive:
-            for root, dirs, files in os.walk(filename):
-                for fname in files:
-                    if os.path.splitext(fname)[1] == '.otf':
-                        handle_font(fname)
-        else:
-            handle_font(filename)
-
-    if check and comp_fname != None:
-        check_compression_integrity(filename, comp_fname)
-        check_call_depth(comp_fname)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-                        description="""FontTools Compreffor will take a CFF-flavored
-                                       OpenType font and automatically detect
-                                       repeated routines and generate subroutines
-                                       to minimize the disk space needed to
-                                       represent a font.""")
-    parser.add_argument("filename", help="the path to the font file", nargs="?")
-    parser.add_argument("comp_fname", nargs="?", metavar="compressed-file",
-                        help="the path to the compressed file. if this is given"
-                             " with the -c flag, it will be checked against "
-                             " `filename`.")
-    parser.add_argument("-t", "--test", required=False, action="store_true",
-                        default=False, help="run test cases")
-    parser.add_argument("-s", "--status", required=False, action="store_true",
-                        dest="print_status", default=False)
-    parser.add_argument("-v", "--verbose", required=False, action="store_true",
-                        dest="verbose", default=False)
-    parser.add_argument("-c", "--check", required=False, action="store_true",
-                        help="verify that the outputted font is valid and "
-                             "functionally equivalent to the input")
-    parser.add_argument("-d", "--decompress", required=False, action="store_true",
-                        help="decompress source before compressing (necessary if "
-                             "there are subroutines in the source)")
-    parser.add_argument('-r', '--recursive', required=False, action='store_true',
-                        default=False)
-    parser.add_argument("--chunkratio", required=False, type=float,
-                        dest="chunk_ratio",
-                        help="0-1, specify the percentage size of the"
-                             " job chunks used for parallel processing")
-    parser.add_argument("-n", "--nrounds", required=False, type=int,
-                        help="the number of iterations to run the algorithm"
-                             " (defaults to 4)")
-    parser.add_argument("--disable-parallel", required=False, action="store_true",
-                        dest="single_process", help="perform operation serially")
-    parser.add_argument("-p", "--nprocesses", required=False, type=int,
-                        dest="processes", help="specify number of concurrent "
-                                               "processes to run")
-    parser.add_argument("-m", "--maxsubrs", required=False, type=int,
-                        dest="nsubrs_limit", help="limit to the number of "
-                                                  " subroutines per INDEX"
-                                                  " (defaults to 64K)")
-    parser.add_argument('--generatecff', required=False, action='store_true',
-                        dest='generate_cff', default=False)
-
-    kwargs = vars(parser.parse_args())
-
-    assert not ((kwargs["single_process"]) and (kwargs["processes"] != None)), \
-                    "Incompatible flags"
-
-    main(**kwargs)
