@@ -64,7 +64,11 @@ def check_call_depth(compressed_file):
 
 def check_cff_call_depth(cff):
     """Checks that the Charstrings in the provided CFFFontSet
-    obey the rules for subroutine nesting."""
+    obey the rules for subroutine nesting.
+
+    Return True if the subroutine nesting level does not exceed
+    the maximum limit (10), else return False.
+    """
 
     SUBR_NESTING_LIMIT = 10
 
@@ -118,8 +122,8 @@ def check_cff_call_depth(cff):
     if track_info.max_for_all <= SUBR_NESTING_LIMIT:
         log.info("Subroutine nesting depth ok! [max nesting depth of %d]",
                  track_info.max_for_all)
-        return track_info.max_for_all
+        return True
     else:
         log.warning("Subroutine nesting depth too deep :( [max nesting depth "
                     "of %d]", track_info.max_for_all)
-        return track_info.max_for_all
+        return False
