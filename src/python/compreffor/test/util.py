@@ -13,13 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from fontTools import ttLib
 from fontTools.misc import psCharStrings
+from compreffor import decompress, timer
 
 
+log = logging.getLogger(__name__)
+
+
+@timer("check compression integrity")
 def check_compression_integrity(orignal_file, compressed_file):
     """Compares two fonts to confirm they are functionally equivalent"""
-    from compreffor import decompress
 
     orig_font = ttLib.TTFont(orignal_file)
     orig_gset = orig_font.getGlyphSet()
@@ -37,17 +42,18 @@ def check_compression_integrity(orignal_file, compressed_file):
         comp_glyph = comp_gset[g]._glyph
         orig_glyph.decompile()
         if not (orig_glyph.program == comp_glyph.program):
-            print("Difference found in glyph '%s'" % (g,))
+            log.warning("Difference found in glyph '%s'" % (g,))
             passed = False
 
     if passed:
-        print("Fonts match!")
+        log.info("Fonts match!")
         return True
     else:
-        print("Fonts have differences :(")
+        log.warning("Fonts have differences :(")
         return False
 
 
+@timer("check subroutine nesting depth")
 def check_call_depth(compressed_file):
     """Runs `check_cff_call_depth` on a file"""
 
@@ -93,7 +99,7 @@ def check_cff_call_depth(cff):
                         increment_subr_depth(next_subr, depth + 1, subrs)
                 last = tok
         else:
-            print("Compiled subr encountered")
+            log.warning("Compiled subr encountered")
 
     def increment_subr_depth(subr, depth, subrs=None):
         if not hasattr(subr, "_max_call_depth") or subr._max_call_depth < depth:
@@ -110,8 +116,10 @@ def check_cff_call_depth(cff):
         follow_program(cs.program, 0, cs.private.Subrs)
 
     if track_info.max_for_all <= SUBR_NESTING_LIMIT:
-        print("Subroutine nesting depth ok! [max nesting depth of %d]" % track_info.max_for_all)
+        log.info("Subroutine nesting depth ok! [max nesting depth of %d]",
+                 track_info.max_for_all)
         return track_info.max_for_all
     else:
-        print("Subroutine nesting depth too deep :( [max nesting depth of %d]" % track_info.max_for_all)
+        log.warning("Subroutine nesting depth too deep :( [max nesting depth "
+                    "of %d]", track_info.max_for_all)
         return track_info.max_for_all
