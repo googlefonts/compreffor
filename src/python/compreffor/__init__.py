@@ -81,7 +81,7 @@ def compress(ttFont, method_python=False, **options):
         # there are subroutines in font; must decompress it first
         decompress(ttFont)
     if method_python:
-        pyCompressor.Compreffor(ttFont, **options).compress()
+        pyCompressor.compreff(ttFont, **options)
     else:
         cxxCompressor.compreff(ttFont, **options)
 

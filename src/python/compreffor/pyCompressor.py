@@ -70,7 +70,7 @@ SINGLE_BYTE_OPS = set(['hstem',
                        'vhcurveto',
                        'hvcurveto'])
 
-__all__ = ["CandidateSubr", "SubstringFinder", "Compreffor"]
+__all__ = ["CandidateSubr", "SubstringFinder", "Compreffor", "compreff"]
 
 def tokenCost(token):
         """Calculate the bytecode size of a T2 Charstring token"""
@@ -1005,6 +1005,12 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose):
         sys.stdout.write("."); sys.stdout.flush()
     return {"encoding": encoding, "market_cost": market_cost}
 
+
+# this is here for symmetry with cxxCompressor.compreff
+
+def compreff(font, **options):
+    """ Main function that compresses `font`, a TTFont object, in place. """
+    Compreffor(font, **options).compress()
 
 
 
