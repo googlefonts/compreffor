@@ -45,6 +45,8 @@ from fontTools.misc.py23 import BytesIO
 from fontTools.ttLib import TTFont
 
 
+__all__ = ["compreff"]
+
 # default values:
 NSUBRS_LIMIT = 65533
 SUBR_NEST_LIMIT  = 10
