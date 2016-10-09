@@ -15,11 +15,11 @@
 
 from fontTools import ttLib
 from fontTools.misc import psCharStrings
-import fontTools.subset
 
 
 def check_compression_integrity(orignal_file, compressed_file):
     """Compares two fonts to confirm they are functionally equivalent"""
+    from compreffor import decompress
 
     orig_font = ttLib.TTFont(orignal_file)
     orig_gset = orig_font.getGlyphSet()
@@ -28,13 +28,8 @@ def check_compression_integrity(orignal_file, compressed_file):
 
     assert orig_gset.keys() == comp_gset.keys()
 
-    # decompress the compressed font
-    options = fontTools.subset.Options()
-    options.desubroutinize = True
-    subsetter = fontTools.subset.Subsetter(options=options)
-    subsetter.populate(glyphs=comp_font.getGlyphOrder())
-    subsetter.subset(orig_font)
-    subsetter.subset(comp_font)
+    decompress(orig_font, make_temp=False)
+    decompress(comp_font, make_temp=False)
 
     passed = True
     for g in orig_gset.keys():
