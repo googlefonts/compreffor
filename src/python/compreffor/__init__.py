@@ -21,52 +21,42 @@ outputted font file. In addition to providing a Python
 interface, this tool can be used on the command line.
 
 Usage (python):
+>> from fontTools.ttLib import TTFont
+>> import compreffor
 >> font = TTFont(filename)
 >> options = { ... }
->> comp = Compreffor(font, method=compreffor.Methods.Cxx, **options)
->> comp.compress()
+>> compreffor.compress(font, **options)
 >> font.save(filename)
-
-Options:
-When initializing a Compreffor object, options can be set using
-the options kwargs. They are:
-    - verbose (boolean) -- print status messages during compression
-    - nrounds (integer) -- the number of market iterations to run
-    - nsubrs_limit (integer) -- limit to number of subrs per INDEX
-With Methods.Py, the following additional options are available:
-    - print_status (boolean) -- printing level lower than verbose
-    - chunk_ratio (float) -- set the percentage of charstrings
-                             to be run by each process
-    - single_process (boolean) -- disable multiprocessing
-    - processes (integer) -- the number of simultaneous processes
-                             to run
 
 Compression Backends:
 There are 2 different ways the compreffor can be run.
-    - First is a pure python approach, which can be selected from this module
-      by passing method=Methods.Py. This backend is significantly slower than
-      the other backend (~10-20x). The logic for this backend can be found
-      in pyCompressor.py.
-    - Second is C++ extension module backed. With this method, python calls
-      the relevant functions by importing directly from `_compreffor.so`. This
-      is the default method=Methods.Cxx. The logic is in cxxCompressor.py,
-      cffCompressor.h, cffCompressor.cc and _compreffor.pyx.
+    - The default method is backed by a C++ extension module. The logic is
+      in cxxCompressor.py, cffCompressor.h, cffCompressor.cc and
+      _compreffor.pyx.
+    - The second is a pure Python approach, and can be selected from `compress`
+      by passing `method_python=True`. This is significantly slower than the
+      the other backend (~10-20x). The logic can be found in pyCompressor.py.
+
+Options:
+When running `compreffor.compress`, options can be set using keyword arguments:
+    - nrounds (integer) -- the number of market iterations to run (default: 4)
+    - max_subrs (integer) -- limit to number of subrs per INDEX
+                             (default: 65533)
+
+With `method_python=True`, the following additional options are available:
+    - chunk_ratio (float) -- set the percentage of charstrings
+                             to be run by each process. The value must be a
+                             float between 0 < n <= 1 (default: 0.1)
+    - processes (integer) -- the number of simultaneous processes to run.
+                             Use value 1 to perform operation serially.
 
 Usage (command line):
-To use on the command line, pyCompressor.py or cxxCompressor.py must be called
-directly rather than through this file. The two offer almost identical options,
-which can be described in the following way:
->> ./pyCompressor.py -h
-...
->> ./cxxCompressor.py -h
-...
+From the command line, you can either run the package as a module,
 
-In both versions, the output goes to a file in the same directory
-as the original, but with .compressed appended just before the file
-extension. Example usage:
->> ./cxxCompressor.py /path/to/font.otf
-...
-# font written to /path/to/font.compressed.otf
+$ python -m compreffor --help
+
+Or call the `compreffor` console script installed with the package.
+Use -h/--help to list all the available options.
 """
 
 import logging
