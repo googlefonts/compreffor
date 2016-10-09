@@ -82,6 +82,58 @@ def compress(ttFont, method_python=False, **options):
         cxxCompressor.compreff(ttFont, **options)
 
 
+def decompress(ttFont, **kwargs):
+    """ Use the FontTools Subsetter to desubroutinize the font's CFF table.
+    Any keyword arguments are passed on as options to the Subsetter.
+    Skip if the font contains no subroutines.
+    """
+    if not has_subrs(ttFont):
+        return  # Nothing to decompress
+
+    from fontTools import subset
+
+    # The FontTools subsetter modifies many tables by default; here
+    # we only want to desubroutinize, so we run the subsetter on a
+    # temporary copy and extract the resulting CFF table from it
+    make_temp = kwargs.pop('make_temp', True)
+    if make_temp:
+        from io import BytesIO
+        from fontTools.ttLib import TTFont, newTable
+
+        stream = BytesIO()
+        ttFont.save(stream, reorderTables=None)
+        stream.flush()
+        stream.seek(0)
+        tmpfont = TTFont(stream)
+    else:
+        tmpfont = ttFont  # run subsetter on the original font
+
+    options = subset.Options(**kwargs)
+    options.desubroutinize = True
+    subsetter = subset.Subsetter(options=options)
+    subsetter.populate(glyphs=tmpfont.getGlyphOrder())
+    subsetter.subset(tmpfont)
+
+    if make_temp:
+        # copy modified CFF table to original font
+        data = tmpfont['CFF '].compile(tmpfont)
+        table = newTable('CFF ')
+        table.decompile(data, ttFont)
+        ttFont['CFF '] = table
+        tmpfont.close()
+
+
+def has_subrs(ttFont):
+    """ Return True if the font's CFF table contains any subroutines. """
+    if 'CFF ' not in ttFont:
+        raise ValueError("Invalid font: no 'CFF ' table found")
+    td = ttFont['CFF '].cff.topDictIndex[0]
+    priv_subrs = (hasattr(td, 'FDArray') and
+                  any((hasattr(fd, 'Subrs') and len(fd.Subrs) > 0)
+                      for fd in td.FDArray))
+    return len(td.GlobalSubrs) > 0 or priv_subrs
+
+
 # The `Methods` and `Compreffor` classes are now deprecated, but we keep
 # them here for backward compatibility
 
