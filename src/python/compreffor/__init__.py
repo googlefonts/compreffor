@@ -75,7 +75,11 @@ from compreffor import cxxCompressor, pyCompressor
 def compress(ttFont, method_python=False, **options):
     """ Subroutinize TTFont instance in-place using the C++ Compreffor.
     If 'method_python' is True, use the slower, pure-Python Compreffor.
+    If the font already contains subroutines, it is first decompressed.
     """
+    if has_subrs(ttFont):
+        # there are subroutines in font; must decompress it first
+        decompress(ttFont)
     if method_python:
         pyCompressor.Compreffor(ttFont, **options).compress()
     else:
