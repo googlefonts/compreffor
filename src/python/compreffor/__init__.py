@@ -69,6 +69,12 @@ extension. Example usage:
 # font written to /path/to/font.compressed.otf
 """
 
+import logging
+from fontTools.misc.loggingTools import Timer
+
+log = logging.getLogger(__name__)
+timer = Timer(logger=logging.getLogger(log.name + ".timer"))
+
 from compreffor import cxxCompressor, pyCompressor
 
 
@@ -78,7 +84,8 @@ def compress(ttFont, method_python=False, **options):
     If the font already contains subroutines, it is first decompressed.
     """
     if has_subrs(ttFont):
-        # there are subroutines in font; must decompress it first
+        log.warning(
+            "There are subroutines in font; must decompress it first")
         decompress(ttFont)
     if method_python:
         pyCompressor.compreff(ttFont, **options)
@@ -92,7 +99,8 @@ def decompress(ttFont, **kwargs):
     Skip if the font contains no subroutines.
     """
     if not has_subrs(ttFont):
-        return  # Nothing to decompress
+        log.debug('No subroutines found; skip decompress')
+        return
 
     from fontTools import subset
 
