@@ -134,6 +134,19 @@ def has_subrs(ttFont):
     return len(td.GlobalSubrs) > 0 or priv_subrs
 
 
+def check(original_file, compressed_file):
+    """ Compare the original and compressed font files to confirm they are
+    functionally equivalent. Also check that the Charstrings in the compressed
+    font's CFFFontSet don't exceed the maximum subroutine nesting level.
+    Return True if all checks pass, else return False.
+    """
+    from compreffor.test.util import check_compression_integrity
+    from compreffor.test.util import check_call_depth
+    rv = check_compression_integrity(original_file, compressed_file)
+    rv &= check_call_depth(compressed_file)
+    return rv
+
+
 # The `Methods` and `Compreffor` classes are now deprecated, but we keep
 # them here for backward compatibility
 
