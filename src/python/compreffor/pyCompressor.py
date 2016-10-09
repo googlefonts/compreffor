@@ -436,7 +436,7 @@ class Compreffor(object):
 
     def __init__(self, font, verbose=False, print_status=False, test_mode=False,
                  chunk_ratio=None, nrounds=None, single_process=None,
-                 processes=None, nsubrs_limit=None):
+                 processes=None, max_subrs=None):
         """
         Initialize the compressor.
 
@@ -449,7 +449,7 @@ class Compreffor(object):
         nrounds -- specifies the number of rounds to run
         single_process -- indicates not to parallelize
         processes -- specify the number of parallel processes
-        nsubrs_limit -- specify the limit on the number of subrs in an INDEX
+        max_subrs -- specify the limit on the number of subrs in an INDEX
         """
 
         if isinstance(font, TTFont):
@@ -472,8 +472,8 @@ class Compreffor(object):
             self.SINGLE_PROCESS = single_process
         if processes != None:
             self.PROCESSES = processes
-        if nsubrs_limit != None:
-            self.NSUBRS_LIMIT = nsubrs_limit
+        if max_subrs != None:
+            self.NSUBRS_LIMIT = max_subrs
 
     def compress(self):
         """Compress the provided font using the iterative method"""
