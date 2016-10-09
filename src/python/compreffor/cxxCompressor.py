@@ -33,19 +33,16 @@ Usage (python):
 
 import array
 import struct
-import time
-import os
+import logging
 from compreffor.pyCompressor import (
     Compreffor, CandidateSubr, tokenCost)
-from compreffor import _compreffor as lib
+from compreffor import _compreffor as lib, timer
 from fontTools.misc.py23 import BytesIO
 
 
-__all__ = ["compreff"]
+log = logging.getLogger(__name__)
 
-# default values:
-NSUBRS_LIMIT = 65533
-SUBR_NEST_LIMIT  = 10
+__all__ = ["compreff"]
 
 
 class IdKeyMap(object):
@@ -84,6 +81,7 @@ class SimpleCandidateSubr(CandidateSubr):
         return self._encoding
 
 
+@timer("produce data for C++ library")
 def write_data(td):
     """Writes CharStrings and FDSelect from the TopDict td into a string
     that is easily readable."""
@@ -150,6 +148,7 @@ def read_data(td, result_string):
     return (subrs, glyph_encodings)
 
 
+@timer("extract results")
 def interpret_data(td, results):
     """Interpret the result array from a lib.compreff call to
     produce Python data structures."""
@@ -194,50 +193,28 @@ def interpret_data(td, results):
     return (subrs, glyph_encodings)
 
 
-def compreff(font, verbose=False, **kwargs):
+@timer("compress the font")
+def compreff(font, nrounds=None, max_subrs=None):
     """Main function that compresses `font`, a TTFont object,
     in place.
     """
-
-    full_start_time = start_time = time.time()
-
     assert len(font['CFF '].cff.topDictIndex) == 1
 
     td = font['CFF '].cff.topDictIndex[0]
 
-    if verbose:
-        print("Preparing external call...")
-        start_time = time.time()
-
-    call = [os.path.join(os.path.abspath(os.path.dirname(__file__)), "cffCompressor")]
-
-    if 'nrounds' in kwargs and kwargs.get('nrounds') != None:
-        call.extend(['--nrounds', str(kwargs.get('nrounds'))])
-
-    max_subrs = NSUBRS_LIMIT
-    if 'nsubrs_limit' in kwargs and kwargs.get('nsubrs_limit') != None:
-        max_subrs = kwargs.get('nsubrs_limit')
+    if nrounds is None:
+        nrounds = Compreffor.NROUNDS
+    if max_subrs is None:
+        max_subrs = Compreffor.NSUBRS_LIMIT
 
     input_data = write_data(td)
-    if verbose:
-        print("Produced data for C++ (delta %gs)" % (time.time() - start_time))
-        start_time = time.time()
-    results = lib.compreff(input_data, 4)
-    if verbose:
-        print("Lib call returned (delta %gs)" % (time.time() - start_time))
-        start_time = time.time()
+    with timer("run 'lib.compreff()'"):
+        results = lib.compreff(input_data, nrounds)
     subrs, glyph_encodings = interpret_data(td, results)
 
-    if verbose:
-        print("Extracted results (delta %gs)" % (time.time() - start_time))
-        start_time = time.time()
-
-    for cs in td.CharStrings.values():
-        cs.decompile()
-
-    if verbose:
-        print("Decompiled charstrings (delta %gs)" % (time.time() - start_time))
-        start_time = time.time()
+    with timer("decompile charstrings"):
+        for cs in td.CharStrings.values():
+            cs.decompile()
 
     # in order of charset
     chstrings = [x.program for x in td.CharStrings.values()]
@@ -254,6 +231,7 @@ def compreff(font, verbose=False, **kwargs):
         fdselect = None
         fdlen = 1
 
+    nest_limit = Compreffor.SUBR_NEST_LIMIT
     gsubrs, lsubrs = Compreffor.process_subrs(
                             td.charset,
                             glyph_encodings,
@@ -262,12 +240,8 @@ def compreff(font, verbose=False, **kwargs):
                             subrs,
                             IdKeyMap(),
                             max_subrs,
-                            SUBR_NEST_LIMIT)
+                            nest_limit)
 
     encoding = dict(zip(td.charset, glyph_encodings))
 
     Compreffor.apply_subrs(td, encoding, gsubrs, lsubrs)
-
-    if verbose:
-        print("Finished post-processing (delta %gs)" % (time.time() - start_time))
-        print("Total time: %gs" % (time.time() - full_start_time))
