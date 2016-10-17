@@ -28,20 +28,21 @@ Usage (in Python):
 >> font.save(path_to_output)
 """
 
-import os
-import argparse
 import itertools
-import unittest
 import functools
 import sys
-import time
 import multiprocessing
 import math
 from collections import deque
+import logging
 from fontTools import cffLib
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
 from fontTools.misc.py23 import range, basestring
+from compreffor import timer
+
+
+log = logging.getLogger(__name__)
 
 
 SINGLE_BYTE_OPS = set(['hstem',
@@ -70,7 +71,8 @@ SINGLE_BYTE_OPS = set(['hstem',
                        'vhcurveto',
                        'hvcurveto'])
 
-__all__ = ["CandidateSubr", "SubstringFinder", "Compreffor"]
+__all__ = ["CandidateSubr", "SubstringFinder", "Compreffor", "compreff"]
+
 
 def tokenCost(token):
         """Calculate the bytecode size of a T2 Charstring token"""
@@ -96,6 +98,7 @@ def tokenCost(token):
         elif tp == float:
             return 5
         assert 0
+
 
 class CandidateSubr(object):
     """
@@ -133,7 +136,7 @@ class CandidateSubr(object):
     def value(self):
         """Returns the actual substring value"""
 
-        assert self.chstrings != None
+        assert self.chstrings is not None
 
         return self.chstrings[self.location[0]][self.location[1]:(self.location[1] + self.length)]
 
@@ -185,7 +188,7 @@ class CandidateSubr(object):
     def cost(self):
         """Return the size (in bytes) that the bytecode for this takes up"""
 
-        assert self.cost_map != None
+        assert self.cost_map is not None
 
         try:
             try:
@@ -218,6 +221,7 @@ class CandidateSubr(object):
     def __repr__(self):
         return "<CandidateSubr: %d x %dreps>" % (self.length, self.freq)
 
+
 class SubstringFinder(object):
     """
     This class facilitates the finding of repeated substrings
@@ -242,9 +246,9 @@ class SubstringFinder(object):
 
     __slots__ = ["suffixes", "data", "alphabet_size", "length", "substrings",
                  "rev_keymap", "glyph_set_keys", "_completed_suffixes",
-                 "cost_map", "verbose"]
+                 "cost_map"]
 
-    def __init__(self, glyph_set, verbose=False):
+    def __init__(self, glyph_set):
         self.rev_keymap = []
         self.cost_map = []
         self.data = []
@@ -254,8 +258,6 @@ class SubstringFinder(object):
         self.process_chstrings(glyph_set)
 
         self._completed_suffixes = False
-
-        self.verbose = verbose
 
     def process_chstrings(self, glyph_set):
         """Remap the charstring alphabet and put into self.data"""
@@ -304,16 +306,13 @@ class SubstringFinder(object):
         if self._completed_suffixes:
             return self.suffixes
 
-        if self.verbose:
-            print("Gettings suffixes via Python sort"); start_time = time.time()
+        with timer("get suffixes via Python sort"):
+            self.suffixes.sort(key=lambda idx: self.data[idx[0]][idx[1]:])
+            self._completed_suffixes = True
 
-        self.suffixes.sort(key=lambda idx: self.data[idx[0]][idx[1]:])
-        self._completed_suffixes = True
-
-        if self.verbose:
-            print("Took %gs" % (time.time() - start_time))
         return self.suffixes
 
+    @timer("get LCP array")
     def get_lcp(self):
         """Returns the LCP array"""
 
@@ -362,54 +361,45 @@ class SubstringFinder(object):
 
         self.get_suffixes()
 
-        if self.verbose:
-            print("Extracting substrings"); start_time = time.time()
-            print("Getting lcp"); lcp_time = time.time()
-
         lcp = self.get_lcp()
 
-        if self.verbose:
-            print("Took %gs (to get lcp array)" % (time.time() - lcp_time))
+        with timer("extract substrings"):
+            start_indices = deque()
+            self.substrings = []
 
-        start_indices = deque()
-        self.substrings = []
+            for i, min_l in enumerate(lcp):
+                # First min_l items are still the same.
 
-        for i, min_l in enumerate(lcp):
-            # First min_l items are still the same.
+                # Pop the rest from previous and account for.
+                # Note: non-branching substrings aren't included
+                # TODO: don't allow overlapping substrings into the same set
 
-            # Pop the rest from previous and account for.
-            # Note: non-branching substrings aren't included
-            # TODO: don't allow overlapping substrings into the same set
+                while start_indices and start_indices[-1][0] > min_l:
+                    l, start_idx = start_indices.pop()
+                    freq = i - start_idx
+                    if freq < min_freq:
+                        continue
 
-            while start_indices and start_indices[-1][0] > min_l:
-                l, start_idx = start_indices.pop()
-                freq = i - start_idx
-                if freq < min_freq:
-                    continue
+                    substr = CandidateSubr(
+                                           l,
+                                           self.suffixes[start_idx],
+                                           freq,
+                                           self.data,
+                                           self.cost_map)
+                    if substr.subr_saving() > 0 or not check_positive:
+                        self.substrings.append(substr)
 
-                substr = CandidateSubr(
-                                       l,
-                                       self.suffixes[start_idx],
-                                       freq,
-                                       self.data,
-                                       self.cost_map)
-                if substr.subr_saving() > 0 or not check_positive:
-                    self.substrings.append(substr)
+                if not start_indices or min_l > start_indices[-1][0]:
+                    start_indices.append((min_l, i - 1))
 
-            if not start_indices or min_l > start_indices[-1][0]:
-                start_indices.append((min_l, i - 1))
-
-        if self.verbose:
-            print("Took %gs (to extract substrings)" % (time.time() - start_time)); start_time = time.time()
-            print("%d substrings found" % len(self.substrings))
-            print("Sorting...")
-        if sort_by_length:
-            self.substrings.sort(key=lambda s: len(s))
-        else:
-            self.substrings.sort(key=lambda s: s.subr_saving(), reverse=True)
-        if self.verbose:
-            print("Took %gs (to sort)" % (time.time() - start_time))
+        log.debug("%d substrings found", len(self.substrings))
+        with timer("sort substrings"):
+            if sort_by_length:
+                self.substrings.sort(key=lambda s: len(s))
+            else:
+                self.substrings.sort(key=lambda s: s.subr_saving(), reverse=True)
         return self.substrings
+
 
 class Compreffor(object):
     """
@@ -430,26 +420,22 @@ class Compreffor(object):
     LATIN_POOL_CHUNKRATIO = 0.05
     POOL_CHUNKRATIO = 0.1
     CHUNK_CHARSET_CUTOFF = 1500
-    # NSUBRS_LIMIT = 32765 # 32K - 3
-    NSUBRS_LIMIT = 65533 # 64K - 3
+    NSUBRS_LIMIT = 65533  # 64K - 3
     SUBR_NEST_LIMIT = 10
 
-    def __init__(self, font, verbose=False, print_status=False, test_mode=False,
-                 chunk_ratio=None, nrounds=None, single_process=None,
-                 processes=None, nsubrs_limit=None):
+    def __init__(self, font, nrounds=None, max_subrs=None,
+                 chunk_ratio=None, processes=None, test_mode=False):
         """
         Initialize the compressor.
 
         Arguments:
         font -- the TTFont to compress, must be a CFF font
-        verbose -- if True, print miscellanous info during iterations
-        print_status -- if True, print a few status updates
-        test_mode -- disables some checks (such as positive subr_saving)
-        chunk_ratio -- sets the POOL_CHUNKRATIO parameter
         nrounds -- specifies the number of rounds to run
-        single_process -- indicates not to parallelize
-        processes -- specify the number of parallel processes
-        nsubrs_limit -- specify the limit on the number of subrs in an INDEX
+        max_subrs -- specify the limit on the number of subrs in an INDEX
+        chunk_ratio -- sets the POOL_CHUNKRATIO parameter
+        processes -- specify the number of parallel processes (1 to not
+            parallelize)
+        test_mode -- disables some checks (such as positive subr_saving)
         """
 
         if isinstance(font, TTFont):
@@ -457,23 +443,29 @@ class Compreffor(object):
             assert len(font["CFF "].cff.topDictIndex) == 1
             self.font = font
         else:
-            print("Warning: non-TTFont given to Compreffor")
-        self.verbose = verbose
-        self.print_status = print_status
+            log.warning("non-TTFont given to Compreffor")
         self.test_mode = test_mode
 
-        if chunk_ratio != None:
+        if chunk_ratio is not None:
             self.POOL_CHUNKRATIO = chunk_ratio
-        elif font and len(font["CFF "].cff.topDictIndex[0].charset) < self.CHUNK_CHARSET_CUTOFF:
+        elif font and (len(font["CFF "].cff.topDictIndex[0].charset) <
+                       self.CHUNK_CHARSET_CUTOFF):
             self.POOL_CHUNKRATIO = self.LATIN_POOL_CHUNKRATIO
-        if nrounds != None:
+        if nrounds is not None:
             self.NROUNDS = nrounds
-        if single_process != None:
-            self.SINGLE_PROCESS = single_process
-        if processes != None:
-            self.PROCESSES = processes
-        if nsubrs_limit != None:
-            self.NSUBRS_LIMIT = nsubrs_limit
+        if processes is not None:
+            if processes < 1:
+                raise ValueError('processes value must be > 0')
+            elif processes == 1:
+                self.SINGLE_PROCESS = True
+            else:
+                self.PROCESSES = processes
+        if max_subrs is not None:
+            self.NSUBRS_LIMIT = max_subrs
+        # only print the progress in `iterative_encode` if the logger is
+        # enabled for DEBUG, and if it outputs to the console's stderr
+        self._progress = (not log.disabled and log.isEnabledFor(logging.DEBUG)
+                          and _has_stderr_handler(log))
 
     def compress(self):
         """Compress the provided font using the iterative method"""
@@ -500,6 +492,7 @@ class Compreffor(object):
         Compreffor.apply_subrs(top_dict, encoding, gsubrs, lsubrs)
 
     @staticmethod
+    @timer("apply subroutines")
     def apply_subrs(top_dict, encoding, gsubrs, lsubrs):
         multi_font = hasattr(top_dict, "FDArray")
         gbias = psCharStrings.calcSubrBias(gsubrs)
@@ -585,7 +578,7 @@ class Compreffor(object):
         """
 
         # generate substrings for marketplace
-        sf = SubstringFinder(glyph_set, verbose=self.verbose)
+        sf = SubstringFinder(glyph_set)
 
         if self.test_mode:
             substrings = sf.get_substrings(min_freq=0, check_positive=False, sort_by_length=False)
@@ -603,16 +596,16 @@ class Compreffor(object):
         if not self.SINGLE_PROCESS:
             pool = multiprocessing.Pool(processes=self.PROCESSES)
         else:
-            class DummyPool: pass
+            class DummyPool:
+                pass
             pool = DummyPool()
             pool.map = lambda f, *l, **kwargs: map(f, *l)
 
         substr_dict = {}
 
-        start_time = time.time()
+        timer.split()
 
-        if self.verbose:
-            print("glyphstrings+substrings=%d" % (len(data) + len(substrings)))
+        log.debug("glyphstrings+substrings=%d", len(data) + len(substrings))
 
         # set up dictionary with initial values
         for idx, substr in enumerate(substrings):
@@ -637,7 +630,7 @@ class Compreffor(object):
             substr_encodings = pool.map(functools.partial(optimize_charstring,
                                                           cost_map=cost_map,
                                                           substr_dict=substr_dict,
-                                                          verbose=self.verbose),
+                                                          progress=self._progress),
                                         enumerate([s.value() for s in substrings]),
                                         chunksize=csize)
 
@@ -651,7 +644,7 @@ class Compreffor(object):
             encodings = pool.map(functools.partial(optimize_charstring,
                                                    cost_map=cost_map,
                                                    substr_dict=substr_dict,
-                                                   verbose=self.verbose),
+                                                   progress=self._progress),
                                  data,
                                  chunksize=csize)
             encodings = [[(enc_item[0], substrings[enc_item[1]]) for enc_item in i["encoding"]] for i in encodings]
@@ -669,39 +662,34 @@ class Compreffor(object):
                     if substr:
                         substr._usages += 1
 
-            if self.verbose or self.print_status:
-                print("Round %d Done!" % (run_count + 1))
-                print("avg: %f" % (float(sum(substr._usages for substr in substrings)) / len(substrings)))
-                print("max: %d" % max(substr._usages for substr in substrings))
-                print("used: %d" % sum(substr._usages > 0 for substr in substrings))
+            if log.isEnabledFor(logging.INFO):
+                log.info("Round %d Done!", (run_count + 1))
+                log.info("avg: %f", (float(sum(substr._usages for substr in substrings)) / len(substrings)))
+                log.info("max: %d", max(substr._usages for substr in substrings))
+                log.info("used: %d", sum(substr._usages > 0 for substr in substrings))
 
             if run_count <= self.NROUNDS - 2 and not self.test_mode:
-                cutdown_time = time.time()
-                if run_count < self.NROUNDS - 2:
-                    bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True) <= 0]
-                    substrings = [s for s in substrings if s.subr_saving(use_usages=True) > 0]
-                else:
-                    bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=False) <= 0]
-                    substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=False) > 0]
+                with timer("cutdown"):
+                    if run_count < self.NROUNDS - 2:
+                        bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True) <= 0]
+                        substrings = [s for s in substrings if s.subr_saving(use_usages=True) > 0]
+                    else:
+                        bad_substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=False) <= 0]
+                        substrings = [s for s in substrings if s.subr_saving(use_usages=True, true_cost=False) > 0]
 
-                for substr in bad_substrings:
-                    # heuristic to encourage use of called substrings:
-                    for idx, called_substr in substr._encoding:
-                        called_substr._usages += substr._usages - 1
-                    del substr_dict[substr.value()]
-                for idx, s in enumerate(substrings):
-                    s._list_idx = idx
-                if self.verbose:
-                    print("%d substrings with non-positive savings removed" % len(bad_substrings))
-                    print("(%d had positive usage)" % len([s for s in bad_substrings if s._usages > 0]))
-                    print("Took %gs to cutdown" % (time.time() - cutdown_time))
+                    for substr in bad_substrings:
+                        # heuristic to encourage use of called substrings:
+                        for idx, called_substr in substr._encoding:
+                            called_substr._usages += substr._usages - 1
+                        del substr_dict[substr.value()]
+                    for idx, s in enumerate(substrings):
+                        s._list_idx = idx
+                    if log.isEnabledFor(logging.DEBUG):
+                        log.debug("%d substrings with non-positive savings removed", len(bad_substrings))
+                        log.debug("(%d had positive usage)", len([s for s in bad_substrings if s._usages > 0]))
 
-            if self.verbose:
-                print("")
-
-        if self.verbose or self.print_status:
-            print("Finished iterative market (%gs)" % (time.time() - start_time))
-            print("%d candidate subrs found" % len(substrings))
+        log.info("Finished iterative market (%gs)", timer.split())
+        log.info("%d candidate subrs found", len(substrings))
 
         gsubrs, lsubrs = Compreffor.process_subrs(
                                             glyph_set_keys,
@@ -711,16 +699,15 @@ class Compreffor(object):
                                             substrings,
                                             rev_keymap,
                                             self.NSUBRS_LIMIT,
-                                            self.SUBR_NEST_LIMIT,
-                                            self.verbose)
+                                            self.SUBR_NEST_LIMIT)
 
         return {"glyph_encodings": dict(zip(glyph_set_keys, encodings)),
                 "lsubrs": lsubrs,
                 "gsubrs": gsubrs}
 
     @staticmethod
-    def process_subrs(glyph_set_keys, encodings, fdlen, fdselect, substrings, rev_keymap, subr_limit, nest_limit, verbose=False):
-        post_time = time.time()
+    @timer("post-process subroutines")
+    def process_subrs(glyph_set_keys, encodings, fdlen, fdselect, substrings, rev_keymap, subr_limit, nest_limit):
 
         def mark_reachable(cand_subr, fdidx):
             try:
@@ -731,7 +718,7 @@ class Compreffor(object):
 
             for it in cand_subr._encoding:
                 mark_reachable(it[1], fdidx)
-        if fdselect != None:
+        if fdselect is not None:
             for g, enc in zip(glyph_set_keys, encodings):
                 sel = fdselect(g)
                 for it in enc:
@@ -744,8 +731,7 @@ class Compreffor(object):
         subrs = [s for s in substrings if s.usages() > 0 and hasattr(s, '_fdidx') and  bool(s._fdidx) and s.subr_saving(use_usages=True, true_cost=True) > 0]
 
         bad_substrings = [s for s in substrings if s.usages() == 0 or not hasattr(s, '_fdidx') or not bool(s._fdidx) or s.subr_saving(use_usages=True, true_cost=True) <= 0]
-        if verbose:
-            print("%d substrings unused or negative saving subrs" % len(bad_substrings))
+        log.debug("%d substrings unused or negative saving subrs", len(bad_substrings))
 
         for s in bad_substrings:
             s._flatten = True
@@ -810,9 +796,8 @@ class Compreffor(object):
         gsubrs = [s for s in gsubrs if s._max_call_depth <= nest_limit]
         too_nested = len(too_nested)
 
-        if verbose:
-            print("%d substrings nested too deep" % too_nested)
-            print("%d substrings being flattened" % len(bad_substrings))
+        log.debug("%d substrings nested too deep", too_nested)
+        log.debug("%d substrings being flattened", len(bad_substrings))
 
         # reorganize to minimize call cost of most frequent subrs
         gbias = psCharStrings.calcSubrBias(gsubrs)
@@ -848,9 +833,6 @@ class Compreffor(object):
                 Compreffor.update_program(program, subr.encoding(), gbias, lbias, sel)
                 Compreffor.expand_hintmask(program)
                 subr._program = program
-
-        if verbose:
-            print("POST-TIME: %gs" % (time.time() - post_time))
 
         return (gsubrs, lsubrs)
 
@@ -928,7 +910,6 @@ class Compreffor(object):
             if tok in ("hintmask", "cntrmask"):
                 program[i:i+2] = [(program[i], program[i+1])]
 
-
     @staticmethod
     def expand_hintmask(program):
         """Expands collapsed hintmask tokens into two tokens"""
@@ -940,7 +921,23 @@ class Compreffor(object):
                 assert tok[0] in ("hintmask", "cntrmask")
                 program[i:i+1] = tok
 
-def optimize_charstring(charstring, cost_map, substr_dict, verbose):
+
+def _has_stderr_handler(logger):
+    """ Return True if any of the logger's handlers outputs to sys.stderr. """
+    c = logger
+    while c:
+        if c.handlers:
+            for h in c.handlers:
+                if hasattr(h, 'stream') and h.stream is sys.stderr:
+                    return True
+        if not c.propagate:
+            break
+        else:
+            c = c.parent
+    return False
+
+
+def optimize_charstring(charstring, cost_map, substr_dict, progress=False):
     """Optimize a charstring (encoded using keymap) using
     the substrings in substr_dict. This is the Dynamic Programming portion
     of `iterative_encode`."""
@@ -949,7 +946,6 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose):
         if type(charstring[0]) == int:
             skip_idx = charstring[0]
             charstring = charstring[1]
-            glyph_key = None
     else:
         skip_idx = None
 
@@ -996,16 +992,20 @@ def optimize_charstring(charstring, cost_map, substr_dict, verbose):
         cur_enc_substr = next_enc_substr[cur_enc_idx]
         cur_enc_idx = next_enc_idx[cur_enc_idx]
 
-        if cur_enc_substr != None:
+        if cur_enc_substr is not None:
             encoding.append((last_idx, cur_enc_substr))
-        elif cur_enc_idx - last_idx > 1 and verbose:
-            pass
 
-    if verbose:
-        sys.stdout.write("."); sys.stdout.flush()
+    if progress:
+        sys.stderr.write(".")
+        sys.stderr.flush()
     return {"encoding": encoding, "market_cost": market_cost}
 
 
+# this is here for symmetry with cxxCompressor.compreff
+
+def compreff(font, **options):
+    """ Main function that compresses `font`, a TTFont object, in place. """
+    Compreffor(font, **options).compress()
 
 
 def human_size(num):
@@ -1018,112 +1018,3 @@ def human_size(num):
         else:
             num /= 1024.0
     return '%3.1f %s' % (num, 'GB')
-
-def main(filename=None, comp_fname=None, test=False, decompress=False,
-         verbose=False, check=False, generate_cff=False, recursive=False,
-         **comp_kwargs):
-    from compreffor.test.util import check_compression_integrity, check_call_depth
-
-    if test:
-        from testPyCompressor import TestCffCompressor
-        test_suite = unittest.TestLoader().loadTestsFromTestCase(TestCffCompressor)
-        unittest.TextTestRunner().run(test_suite)
-
-    if filename and comp_fname == None:
-        def handle_font(font_name):
-            font = TTFont(font_name)
-            orig_size = os.path.getsize(font_name)
-
-            if decompress:
-                from fontTools import subset
-                options = subset.Options()
-                options.desubroutinize = True
-                subsetter = subset.Subsetter(options=options)
-                subsetter.populate(glyphs=font.getGlyphOrder())
-                subsetter.subset(font)
-
-            if verbose:
-                print("Compressing font through iterative_encode:")
-            out_name = "%s.compressed%s" % os.path.splitext(font_name)
-
-            compreffor = Compreffor(font, verbose=verbose, **comp_kwargs)
-            compreffor.compress()
-
-            # save compressed font
-            font.save(out_name)
-
-            if generate_cff:
-                # save CFF version
-                font["CFF "].cff.compile(open("%s.cff" % os.path.splitext(out_name)[0], "w"), None)
-
-            comp_size = os.path.getsize(out_name)
-            print("Compressed to %s -- saved %s" %
-                    (os.path.basename(out_name), human_size(orig_size - comp_size)))
-
-            if check:
-                check_compression_integrity(filename, out_name)
-                check_call_depth(out_name)
-
-        if recursive:
-            for root, dirs, files in os.walk(filename):
-                for fname in files:
-                    if os.path.splitext(fname)[1] == '.otf':
-                        handle_font(fname)
-        else:
-            handle_font(filename)
-
-    if check and comp_fname != None:
-        check_compression_integrity(filename, comp_fname)
-        check_call_depth(comp_fname)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-                        description="""FontTools Compreffor will take a CFF-flavored
-                                       OpenType font and automatically detect
-                                       repeated routines and generate subroutines
-                                       to minimize the disk space needed to
-                                       represent a font.""")
-    parser.add_argument("filename", help="the path to the font file", nargs="?")
-    parser.add_argument("comp_fname", nargs="?", metavar="compressed-file",
-                        help="the path to the compressed file. if this is given"
-                             " with the -c flag, it will be checked against "
-                             " `filename`.")
-    parser.add_argument("-t", "--test", required=False, action="store_true",
-                        default=False, help="run test cases")
-    parser.add_argument("-s", "--status", required=False, action="store_true",
-                        dest="print_status", default=False)
-    parser.add_argument("-v", "--verbose", required=False, action="store_true",
-                        dest="verbose", default=False)
-    parser.add_argument("-c", "--check", required=False, action="store_true",
-                        help="verify that the outputted font is valid and "
-                             "functionally equivalent to the input")
-    parser.add_argument("-d", "--decompress", required=False, action="store_true",
-                        help="decompress source before compressing (necessary if "
-                             "there are subroutines in the source)")
-    parser.add_argument('-r', '--recursive', required=False, action='store_true',
-                        default=False)
-    parser.add_argument("--chunkratio", required=False, type=float,
-                        dest="chunk_ratio",
-                        help="0-1, specify the percentage size of the"
-                             " job chunks used for parallel processing")
-    parser.add_argument("-n", "--nrounds", required=False, type=int,
-                        help="the number of iterations to run the algorithm"
-                             " (defaults to 4)")
-    parser.add_argument("--disable-parallel", required=False, action="store_true",
-                        dest="single_process", help="perform operation serially")
-    parser.add_argument("-p", "--nprocesses", required=False, type=int,
-                        dest="processes", help="specify number of concurrent "
-                                               "processes to run")
-    parser.add_argument("-m", "--maxsubrs", required=False, type=int,
-                        dest="nsubrs_limit", help="limit to the number of "
-                                                  " subroutines per INDEX"
-                                                  " (defaults to 64K)")
-    parser.add_argument('--generatecff', required=False, action='store_true',
-                        dest='generate_cff', default=False)
-
-    kwargs = vars(parser.parse_args())
-
-    assert not ((kwargs["single_process"]) and (kwargs["processes"] != None)), \
-                    "Incompatible flags"
-
-    main(**kwargs)

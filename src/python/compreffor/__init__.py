@@ -21,55 +21,136 @@ outputted font file. In addition to providing a Python
 interface, this tool can be used on the command line.
 
 Usage (python):
+>> from fontTools.ttLib import TTFont
+>> import compreffor
 >> font = TTFont(filename)
 >> options = { ... }
->> comp = Compreffor(font, method=compreffor.Methods.Cxx, **options)
->> comp.compress()
+>> compreffor.compress(font, **options)
 >> font.save(filename)
-
-Options:
-When initializing a Compreffor object, options can be set using
-the options kwargs. They are:
-    - verbose (boolean) -- print status messages during compression
-    - nrounds (integer) -- the number of market iterations to run
-    - nsubrs_limit (integer) -- limit to number of subrs per INDEX
-With Methods.Py, the following additional options are available:
-    - print_status (boolean) -- printing level lower than verbose
-    - chunk_ratio (float) -- set the percentage of charstrings
-                             to be run by each process
-    - single_process (boolean) -- disable multiprocessing
-    - processes (integer) -- the number of simultaneous processes
-                             to run
 
 Compression Backends:
 There are 2 different ways the compreffor can be run.
-    - First is a pure python approach, which can be selected from this module
-      by passing method=Methods.Py. This backend is significantly slower than
-      the other backend (~10-20x). The logic for this backend can be found
-      in pyCompressor.py.
-    - Second is C++ extension module backed. With this method, python calls
-      the relevant functions by importing directly from `_compreffor.so`. This
-      is the default method=Methods.Cxx. The logic is in cxxCompressor.py,
-      cffCompressor.h, cffCompressor.cc and _compreffor.pyx.
+    - The default method is backed by a C++ extension module. The logic is
+      in cxxCompressor.py, cffCompressor.h, cffCompressor.cc and
+      _compreffor.pyx.
+    - The second is a pure Python approach, and can be selected from `compress`
+      by passing `method_python=True`. This is significantly slower than the
+      the other backend (~10-20x). The logic can be found in pyCompressor.py.
+
+Options:
+When running `compreffor.compress`, options can be set using keyword arguments:
+    - nrounds (integer) -- the number of market iterations to run (default: 4)
+    - max_subrs (integer) -- limit to number of subrs per INDEX
+                             (default: 65533)
+
+With `method_python=True`, the following additional options are available:
+    - chunk_ratio (float) -- set the percentage of charstrings
+                             to be run by each process. The value must be a
+                             float between 0 < n <= 1 (default: 0.1)
+    - processes (integer) -- the number of simultaneous processes to run.
+                             Use value 1 to perform operation serially.
 
 Usage (command line):
-To use on the command line, pyCompressor.py or cxxCompressor.py must be called
-directly rather than through this file. The two offer almost identical options,
-which can be described in the following way:
->> ./pyCompressor.py -h
-...
->> ./cxxCompressor.py -h
-...
+From the command line, you can either run the package as a module,
 
-In both versions, the output goes to a file in the same directory
-as the original, but with .compressed appended just before the file
-extension. Example usage:
->> ./cxxCompressor.py /path/to/font.otf
-...
-# font written to /path/to/font.compressed.otf
+$ python -m compreffor --help
+
+Or call the `compreffor` console script installed with the package.
+Use -h/--help to list all the available options.
 """
 
+import logging
+from fontTools.misc.loggingTools import Timer
+
+log = logging.getLogger(__name__)
+timer = Timer(logger=logging.getLogger(log.name + ".timer"))
+
 from compreffor import cxxCompressor, pyCompressor
+
+
+def compress(ttFont, method_python=False, **options):
+    """ Subroutinize TTFont instance in-place using the C++ Compreffor.
+    If 'method_python' is True, use the slower, pure-Python Compreffor.
+    If the font already contains subroutines, it is first decompressed.
+    """
+    if has_subrs(ttFont):
+        log.warning(
+            "There are subroutines in font; must decompress it first")
+        decompress(ttFont)
+    if method_python:
+        pyCompressor.compreff(ttFont, **options)
+    else:
+        cxxCompressor.compreff(ttFont, **options)
+
+
+def decompress(ttFont, **kwargs):
+    """ Use the FontTools Subsetter to desubroutinize the font's CFF table.
+    Any keyword arguments are passed on as options to the Subsetter.
+    Skip if the font contains no subroutines.
+    """
+    if not has_subrs(ttFont):
+        log.debug('No subroutines found; skip decompress')
+        return
+
+    from fontTools import subset
+
+    # The FontTools subsetter modifies many tables by default; here
+    # we only want to desubroutinize, so we run the subsetter on a
+    # temporary copy and extract the resulting CFF table from it
+    make_temp = kwargs.pop('make_temp', True)
+    if make_temp:
+        from io import BytesIO
+        from fontTools.ttLib import TTFont, newTable
+
+        stream = BytesIO()
+        ttFont.save(stream, reorderTables=None)
+        stream.flush()
+        stream.seek(0)
+        tmpfont = TTFont(stream)
+    else:
+        tmpfont = ttFont  # run subsetter on the original font
+
+    options = subset.Options(**kwargs)
+    options.desubroutinize = True
+    subsetter = subset.Subsetter(options=options)
+    subsetter.populate(glyphs=tmpfont.getGlyphOrder())
+    subsetter.subset(tmpfont)
+
+    if make_temp:
+        # copy modified CFF table to original font
+        data = tmpfont['CFF '].compile(tmpfont)
+        table = newTable('CFF ')
+        table.decompile(data, ttFont)
+        ttFont['CFF '] = table
+        tmpfont.close()
+
+
+def has_subrs(ttFont):
+    """ Return True if the font's CFF table contains any subroutines. """
+    if 'CFF ' not in ttFont:
+        raise ValueError("Invalid font: no 'CFF ' table found")
+    td = ttFont['CFF '].cff.topDictIndex[0]
+    priv_subrs = (hasattr(td, 'FDArray') and
+                  any((hasattr(fd, 'Subrs') and len(fd.Subrs) > 0)
+                      for fd in td.FDArray))
+    return len(td.GlobalSubrs) > 0 or priv_subrs
+
+
+def check(original_file, compressed_file):
+    """ Compare the original and compressed font files to confirm they are
+    functionally equivalent. Also check that the Charstrings in the compressed
+    font's CFFFontSet don't exceed the maximum subroutine nesting level.
+    Return True if all checks pass, else return False.
+    """
+    from compreffor.test.util import check_compression_integrity
+    from compreffor.test.util import check_call_depth
+    rv = check_compression_integrity(original_file, compressed_file)
+    rv &= check_call_depth(compressed_file)
+    return rv
+
+
+# The `Methods` and `Compreffor` classes are now deprecated, but we keep
+# them here for backward compatibility
 
 
 class Methods:
@@ -78,21 +159,17 @@ class Methods:
 
 class Compreffor(object):
     def __init__(self, font, method=Methods.Cxx, **options):
+        import warnings
+        warnings.warn("'Compreffor' class is deprecated; use 'compress' function "
+                      "instead", UserWarning)
         self.font = font
         self.method = method
         self.options = options
 
     def compress(self):
         if self.method == Methods.Py:
-            self.run_py()
+            compress(self.font, method_python=True, **self.options)
         elif self.method == Methods.Cxx:
-            self.run_cxx()
+            compress(self.font, method_python=False, **self.options)
         else:
             raise ValueError("Invalid method: %r" % self.method)
-
-    def run_py(self):
-        compreffor = pyCompressor.Compreffor(self.font, **self.options)
-        compreffor.compress()
-
-    def run_cxx(self):
-        cxxCompressor.compreff(self.font, **self.options)

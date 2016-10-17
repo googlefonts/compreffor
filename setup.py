@@ -157,7 +157,7 @@ with open('README.rst', 'r') as f:
 
 setup_params = dict(
     name="compreffor",
-    version="0.3.0",
+    version="0.4.0.dev0",
     description="A CFF subroutinizer for fontTools.",
     long_description=long_description,
     author="Sam Fishman",
@@ -175,6 +175,11 @@ setup_params = dict(
     install_requires=[
         "fonttools>=3.1",
     ],
+    entry_points={
+        'console_scripts': [
+            "compreffor = compreffor.__main__:main",
+        ]
+    },
     zip_safe=False,
     classifiers=[
         "Development Status :: 4 - Beta",
