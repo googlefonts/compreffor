@@ -1,4 +1,7 @@
 environment:
+  PYPI_USER: "anthrotype"
+  PYPI_PSWD:
+    secure: 3MYRWT1R2pwRunaCYHAqlQ==
   matrix:
     - PYTHON: "C:\\Python27"
       PYTHON_VERSION: "2.7"
@@ -86,6 +89,17 @@ on_failure:
 artifacts:
   # archive the generated packages in the ci.appveyor.com build report
   - path: .tox\dist\*.whl
+
+# Deploy wheels on tags to PyPI
+on_success:
+  - ps: >-
+      if($env:APPVEYOR_REPO_TAG -eq 'true') {
+        Write-Output ("Deploying " + $env:APPVEYOR_REPO_TAG_NAME + " to PyPI...")
+        pip install --upgrade twine
+        twine upload -u $env:PYPI_USER -p $env:PYPI_PSWD .tox\dist\*.whl
+      } else {
+        Write-Output "Not deploying as this is not a tagged commit"
+      }
 
 deploy:
   # Deploy wheels on tags to GitHub Releases
