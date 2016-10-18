@@ -5,6 +5,7 @@ import os
 from distutils.errors import DistutilsSetupError
 from distutils import log
 from distutils.dep_util import newer_group
+from distutils.core import Command
 import pkg_resources
 import platform
 import sys
@@ -152,6 +153,26 @@ extensions = [
     ),
 ]
 
+
+class PassCommand(Command):
+    """ This is used with Travis `dpl` tool so that it skips creating wheel
+    packages, and simply uploads to PyPI the ones that have been previously
+    built inside the manylinux1 docker container.
+    """
+
+    description = "do nothing"
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        pass
+
+
 with open('README.rst', 'r') as f:
     long_description = f.read()
 
@@ -167,6 +188,7 @@ setup_params = dict(
     ext_modules=extensions,
     cmdclass={
         'build_ext': custom_build_ext,
+        'pass': PassCommand,
     },
     setup_requires=pytest_runner + wheel,
     tests_require=[
