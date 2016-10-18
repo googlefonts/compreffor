@@ -81,15 +81,28 @@ script:
 
 after_success:
   # if tagged, create the source distribution for the deploy stage
-  - if [ -n "$TRAVIS_TAG" ] && [ "$BUILD_SDIST" == true ]; then pip install cython; pip install -U setuptools; python setup.py sdist -d ${TRAVIS_BUILD_DIR}/wheelhouse; fi
+  - if [ -n "$TRAVIS_TAG" ] && [ "$BUILD_SDIST" == true ]; then pip install cython; pip install -U setuptools; python setup.py sdist; fi
+  # copy compiled wheels to dist/ where Travis `dpl` tool can find them and upload to PyPI
+  - if [ -n "$TRAVIS_TAG" ]; then mkdir -p dist; cp wheelhouse/*.whl dist; fi
 
 deploy:
-  provider: releases
-  api_key:
-    secure: DjEjgnbxchBCUB2DFH0jtSee7v3vCmWXCkQrkYyULAlZkEKcLDRVRZoDg1BW/q2aCuAz8vnG4lgVbOwWhT8JTSVtbuVnT2W2chwSmBAyhtC3QVxdMQdIEVjJvU3Ci6QnBQiP9ibi4vjua8ORjWD/CoNm5v/ME0NJjeidDhPJdAg3HAvj6JnocI5alL4LTrmoDRL9ghuAw23uHFcGZ89QOF6cEs5vlD4EJ+zIMssyR3kQsY6bi96tQuo4vpfo+Gd+ygT5k5RrWkuj5Fm7A5yq0wkgxsLdbuwlFtnFl/yahG8c2bWy5iwkEcvPlsaHs9+nwR+hFzqeGDUPyNPHYTPNVyirDk+MNoXYoC08VkzUK3HNC3N/MmZxebG/aEqK0CfJopVzHdlgMQ7Tm00fYzrhazlijrRmttU5oOnuF1glUnScaR0y7zsv3oNg/4z043BbAVclcQvvVu8Fw9aNIjusYHo1MLBN+nHbZBjkIUvSlYoj7E/2kDPsIFt8E8On15a/SIrmXj1DfURnHOYeBhl059h+TTpo2aq4KAn5DnpAcwZHcxgIKdeIriCC6GCYhq3yuGNzusuCxOeEAKU8XijgST2BB2Z93OiDAPNhTJ4SjzvRYTvS15wBGviVhWmbElZlqTZFPaOP8kI+JPnYaNvzdIKBaj5EG1z3ym8XjpTkqLc=
-  file_glob: true
-  file: "${TRAVIS_BUILD_DIR}/wheelhouse/*"
-  skip_cleanup: true
-  on:
-    repo: googlei18n/compreffor
-    tags: true
+  # Deploy on tags to GitHub Releases
+  - provider: releases
+    api_key:
+      secure: DjEjgnbxchBCUB2DFH0jtSee7v3vCmWXCkQrkYyULAlZkEKcLDRVRZoDg1BW/q2aCuAz8vnG4lgVbOwWhT8JTSVtbuVnT2W2chwSmBAyhtC3QVxdMQdIEVjJvU3Ci6QnBQiP9ibi4vjua8ORjWD/CoNm5v/ME0NJjeidDhPJdAg3HAvj6JnocI5alL4LTrmoDRL9ghuAw23uHFcGZ89QOF6cEs5vlD4EJ+zIMssyR3kQsY6bi96tQuo4vpfo+Gd+ygT5k5RrWkuj5Fm7A5yq0wkgxsLdbuwlFtnFl/yahG8c2bWy5iwkEcvPlsaHs9+nwR+hFzqeGDUPyNPHYTPNVyirDk+MNoXYoC08VkzUK3HNC3N/MmZxebG/aEqK0CfJopVzHdlgMQ7Tm00fYzrhazlijrRmttU5oOnuF1glUnScaR0y7zsv3oNg/4z043BbAVclcQvvVu8Fw9aNIjusYHo1MLBN+nHbZBjkIUvSlYoj7E/2kDPsIFt8E8On15a/SIrmXj1DfURnHOYeBhl059h+TTpo2aq4KAn5DnpAcwZHcxgIKdeIriCC6GCYhq3yuGNzusuCxOeEAKU8XijgST2BB2Z93OiDAPNhTJ4SjzvRYTvS15wBGviVhWmbElZlqTZFPaOP8kI+JPnYaNvzdIKBaj5EG1z3ym8XjpTkqLc=
+    file_glob: true
+    file: "dist/*"
+    skip_cleanup: true
+    on:
+      repo: googlei18n/compreffor
+      tags: true
+  # Deploy on tags to PyPI
+  - provider: pypi
+    server: https://upload.pypi.org/legacy/
+    on:
+      repo: googlei18n/compreffor
+      tags: true
+    user: anthrotype
+    password:
+      secure: O7n0blUsuJRHOVMRnIntntwQfpwvrUdDJOYU6MThNAP7VmoZCClHcrRa72zYy/rloEfvLoftdqRgWMvany5rETfb5l//zlKlRxYUnE8UMrRm/b6Q10OWH1PDuLDZ7o1Q97gFaECfoW8s1fygKF41RxiwBlFM9JdWgIaT3S5PNKO16sj50oFs6/Xd4MOeYhVPwj3SBL7Rn0cs2cLXvcUfMiWJ0czl90p9vQpjr5y9OzG87/kSr5Xo7CxoSJg0OHoQNPoGAAuSE6e/Lsg9fVSmqmYcYS/YsCuWb/3UiWrW34JPh5IasK8N0FBJ18j4KPDI5hywKiF8aqSFcvC0QvpBcnx/gSQtOObmnayHnyaJhfnJUcBB2kF0FSO+x4dZqiqtoy08IuIJMiYAgxFtVXXiIGFS4esFaJLQq4n4KhpXXEVn4LWpiBTt5oAvinygttMO/BlirPaaSmgYOf0tZwzQZiv79i6Q+ag6Y5/njYLfZKi23I9YC8qtZUpBoaSpgGeUki1KAChM7EaU/sFQEAEdGSxCIjPzZtE32FokIugZe/q/ov5hINLpy9W0Cb9M7Ma7EqAFFR8VabY6cYupJgDsSwcIgNQZD2CgXe2J83XmNMvkbULuRtGktiXNtNp6eL1OTYLvb/fS+Dp9Nw0VNuBNJFcbHCVN1h0+yfA9mAFTYSI=
+    distributions: pass
