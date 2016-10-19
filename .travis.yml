@@ -84,6 +84,7 @@ after_success:
   - if [ -n "$TRAVIS_TAG" ] && [ "$BUILD_SDIST" == true ]; then pip install cython; pip install -U setuptools; python setup.py sdist; fi
   # copy compiled wheels to dist/ where Travis `dpl` tool can find them and upload to PyPI
   - if [ -n "$TRAVIS_TAG" ]; then mkdir -p dist; cp wheelhouse/*.whl dist; fi
+  - echo $PATH
 
 deploy:
   # Deploy on tags to GitHub Releases
