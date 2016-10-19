@@ -79,15 +79,13 @@ install:
 script:
   - install_run $PLAT
 
-after_script:
-  # exit virtual environment to restore default Travis python path
-  - deactivate
-
 after_success:
   # if tagged, create the source distribution for the deploy stage
   - if [ -n "$TRAVIS_TAG" ] && [ "$BUILD_SDIST" == true ]; then pip install cython; pip install -U setuptools; python setup.py sdist; fi
   # copy compiled wheels to dist/ where Travis `dpl` tool can find them and upload to PyPI
   - if [ -n "$TRAVIS_TAG" ]; then mkdir -p dist; cp wheelhouse/*.whl dist; fi
+  # exit virtual environment to restore default Travis python path
+  - deactivate
   - echo $PATH
 
 deploy:
