@@ -3,4 +3,4 @@
 	url = https://github.com/meganz/mingw-std-threads
 [submodule "multibuild"]
 	path = multibuild
-	url = https://github.com/matthew-brett/multibuild
+	url = https://github.com/anthrotype/multibuild
