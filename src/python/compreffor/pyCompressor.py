@@ -509,12 +509,17 @@ class Compreffor(object):
             for fd in top_dict.FDArray:
                 if not hasattr(fd.Private, "Subrs"):
                     fd.Private.Subrs = cffLib.SubrsIndex()
+
             for subrs, subrs_index in zip(itertools.chain([gsubrs], lsubrs),
                                           itertools.chain([top_dict.GlobalSubrs],
                                           [fd.Private.Subrs for fd in top_dict.FDArray])):
                 for subr in subrs:
                     item = psCharStrings.T2CharString(program=subr._program)
                     subrs_index.append(item)
+
+            for fd in top_dict.FDArray:
+                if not fd.Private.Subrs:
+                    del fd.Private.Subrs
         else:
             for glyph, enc in encoding.items():
                 charstring = top_dict.CharStrings[glyph]
@@ -526,9 +531,13 @@ class Compreffor(object):
 
             if not hasattr(top_dict.Private, "Subrs"):
                 top_dict.Private.Subrs = cffLib.SubrsIndex()
+
             for subr in lsubrs[0]:
                 item = psCharStrings.T2CharString(program=subr._program)
                 top_dict.Private.Subrs.append(item)
+
+            if not top_dict.Private.Subrs:
+                del top_dict.Private.Subrs
 
             for subr in gsubrs:
                 item = psCharStrings.T2CharString(program=subr._program)
