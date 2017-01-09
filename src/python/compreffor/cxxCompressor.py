@@ -83,16 +83,11 @@ class SimpleCandidateSubr(CandidateSubr):
 
 @timer("produce data for C++ library")
 def write_data(td):
-    """Writes CharStrings and FDSelect from the TopDict td into a string
-    that is easily readable."""
+    """Writes CharStrings from the TopDict td into a string that is easily
+    readable."""
 
     out = BytesIO()
     td.CharStrings.charStringsIndex.getCompiler(td.strings, None).toFile(out)
-    try:
-        fdselect = struct.pack('B', len(td.FDArray)) + array.array('B', list(td.FDSelect)).tostring()
-    except AttributeError:
-        fdselect = struct.pack('B', 1)
-    out.write(fdselect)
     return out.getvalue()
 
 

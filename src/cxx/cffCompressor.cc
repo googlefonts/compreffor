@@ -275,7 +275,7 @@ inline void substring_t::setPrice(float newPrice) {
 
 // charstring_pool_t ==========
 charstring_pool_t::charstring_pool_t(unsigned nCharstrings)
-  : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
+  : nextQuark(0), count(nCharstrings),
     finalized(false), numRounds(DEFAULT_NUM_ROUNDS) {
   pool.reserve(nCharstrings);
   offset.reserve(nCharstrings + 1);
@@ -283,7 +283,7 @@ charstring_pool_t::charstring_pool_t(unsigned nCharstrings)
 }
 
 charstring_pool_t::charstring_pool_t(unsigned nCharstrings, int _nrounds)
-  : nextQuark(0), fdSelectTrivial(true), count(nCharstrings),
+  : nextQuark(0), count(nCharstrings),
     finalized(false), numRounds(_nrounds) {
   pool.reserve(nCharstrings);
   offset.reserve(nCharstrings + 1);
@@ -664,10 +664,6 @@ charstring_t charstring_pool_t::getCharstring(unsigned idx) {
   charstring_t cs;
   cs.begin = pool.begin() + offset[idx];
   cs.len = offset[idx + 1] - offset[idx];
-  if (fdSelectTrivial)
-    cs.fd = 0;
-  else
-    cs.fd = fdSelect[idx];
   return cs;
 }
 
@@ -752,16 +748,6 @@ void charstring_pool_t::addRawCharstring(unsigned char* data, unsigned len) {
   }
 
   offset.push_back(offset.back() + nToks);
-}
-
-void charstring_pool_t::setFDSelect(uint8_t* rawFD) {
-  if (rawFD == NULL) {
-    fdSelectTrivial = true;
-  } else {
-    fdSelectTrivial = false;
-    for (unsigned i = 0; i < count; ++i)
-      fdSelect.push_back(rawFD[i]);
-  }
 }
 
 void charstring_pool_t::finalize() {
@@ -1022,17 +1008,6 @@ charstring_pool_t CharstringPoolFactory(
     delete[] data;
   }
 
-  unsigned char fdCount;
-  instream.read(reinterpret_cast<char*>(&fdCount), 1);
-  if (fdCount > 1) {
-    uint8_t* buf = new uint8_t[count];
-    instream.read(reinterpret_cast<char*>(buf), count);
-    csPool.setFDSelect(buf);
-    delete[] buf;
-  } else {
-    csPool.setFDSelect(NULL);
-  }
-
   delete[] offset;
   csPool.finalize();
 
@@ -1086,14 +1061,6 @@ charstring_pool_t CharstringPoolFactoryFromString(
     unsigned len = offset[i + 1] - offset[i];
     csPool.addRawCharstring(buffer + pos, len);
     pos += len;
-  }
-
-  unsigned char fdCount = buffer[pos++];
-  if (fdCount > 1) {
-    csPool.setFDSelect(buffer + pos);
-    pos += count;
-  } else {
-    csPool.setFDSelect(NULL);
   }
 
   delete[] offset;

@@ -74,7 +74,6 @@ class token_t {
 typedef struct charstring_t {
   tokiter_t begin;
   uint32_t len;
-  unsigned char fd;
 } charstring_t;
 
 class light_substring_t {
@@ -204,9 +203,7 @@ class charstring_pool_t {
     std::vector<std::string> revQuark;
     std::vector<token_t> pool;
     std::vector<unsigned> offset;
-    std::vector<uint8_t> fdSelect;
     std::vector<unsigned> rev;
-    bool fdSelectTrivial;
     unsigned count;
     bool finalized;
     int numRounds;
