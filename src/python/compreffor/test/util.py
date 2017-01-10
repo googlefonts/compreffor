@@ -117,7 +117,7 @@ def check_cff_call_depth(cff):
 
     for cs in td.CharStrings.values():
         cs.decompile()
-        follow_program(cs.program, 0, cs.private.Subrs)
+        follow_program(cs.program, 0, getattr(cs.private, "Subrs", []))
 
     if track_info.max_for_all <= SUBR_NESTING_LIMIT:
         log.info("Subroutine nesting depth ok! [max nesting depth of %d]",
