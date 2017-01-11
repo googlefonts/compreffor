@@ -18,16 +18,16 @@ wheel = ['wheel'] if needs_wheel else []
 
 
 # use Cython if available, else try use pre-generated .cpp sources
-cython_min_version = '0.24'
+cython_min_version = '0.25.2'
 try:
     pkg_resources.require("cython >= %s" % cython_min_version)
 except pkg_resources.ResolutionError:
     with_cython = False
-    log.info('Distribution mode: Compiling from Cython-generated .cpp sources.')
+    print('Distribution mode: Compiling from Cython-generated .cpp sources.')
     from setuptools.command.build_ext import build_ext
 else:
     with_cython = True
-    log.info('Development mode: Compiling Cython modules from .pyx sources.')
+    print('Development mode: Compiling Cython modules from .pyx sources.')
     from Cython.Distutils import build_ext
 
 
