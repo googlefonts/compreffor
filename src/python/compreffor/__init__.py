@@ -112,6 +112,7 @@ def decompress(ttFont, **kwargs):
 
     options = subset.Options(**kwargs)
     options.desubroutinize = True
+    options.notdef_outline = True
     subsetter = subset.Subsetter(options=options)
     subsetter.populate(glyphs=tmpfont.getGlyphOrder())
     subsetter.subset(tmpfont)
