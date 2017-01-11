@@ -21,11 +21,11 @@ function run_tests {
         2.7)
            TOXENV=py27
            ;;
-        3.4)
-           TOXENV=py34
-           ;;
         3.5)
            TOXENV=py35
+           ;;
+        3.6)
+           TOXENV=py36
            ;;
     esac
 
