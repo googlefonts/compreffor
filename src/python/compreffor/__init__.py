@@ -133,10 +133,11 @@ def has_subrs(ttFont):
     td = ttFont['CFF '].cff.topDictIndex[0]
     all_subrs = [td.GlobalSubrs]
     if hasattr(td, 'FDArray'):
-        all_subrs.extend(fd.Private.Subrs for fd in td.FDArray if hasattr(fd.Private, 'Subrs'))
+        all_subrs.extend(fd.Private.Subrs for fd in td.FDArray
+                         if hasattr(fd.Private, 'Subrs'))
     elif hasattr(td.Private, 'Subrs'):
         all_subrs.append(td.Private.Subrs)
-    return any(len(subrs) > 0 for subrs in all_subrs)
+    return any(all_subrs)
 
 
 def check(original_file, compressed_file):
