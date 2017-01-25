@@ -131,10 +131,12 @@ def has_subrs(ttFont):
     if 'CFF ' not in ttFont:
         raise ValueError("Invalid font: no 'CFF ' table found")
     td = ttFont['CFF '].cff.topDictIndex[0]
-    priv_subrs = (hasattr(td, 'FDArray') and
-                  any((hasattr(fd, 'Subrs') and len(fd.Subrs) > 0)
-                      for fd in td.FDArray))
-    return len(td.GlobalSubrs) > 0 or priv_subrs
+    all_subrs = [td.GlobalSubrs]
+    if hasattr(td, 'FDArray'):
+        all_subrs.extend(fd.Private.Subrs for fd in td.FDArray if hasattr(fd.Private, 'Subrs'))
+    elif hasattr(td.Private, 'Subrs'):
+        all_subrs.append(td.Private.Subrs)
+    return any(len(subrs) > 0 for subrs in all_subrs)
 
 
 def check(original_file, compressed_file):
