@@ -855,16 +855,16 @@ class Compreffor(object):
     def collect_lsubrs_called_from(gsubrs):
         """
         Collect local subroutines called from any entries in `gsubrs`.
-        This method returns them for after flattening
+        This method returns them as a set for after flattening
         in order to avoid `callsubr` usage in global subroutines.
         """
 
-        lsubrs = []
+        lsubrs = set()
 
         def collect(subr):
             for _, s in subr._encoding:
                 if not s._global:
-                    lsubrs.append(s)
+                    lsubrs.add(s)
                     collect(s)
 
         for subr in gsubrs:
