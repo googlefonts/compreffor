@@ -786,7 +786,13 @@ class Compreffor(object):
                     # no room for this one
                     bad_substrings.append(subr)
 
-        bad_substrings.extend([s[1] for s in subrs]) # add any leftover subrs to bad_substrings
+        bad_substrings.extend([s[1] for s in subrs])  # add any leftover subrs to bad_substrings
+
+        if fdselect is not None:
+            # CID-keyed: Avoid `callsubr` usage in global subroutines
+            bad_lsubrs = Compreffor.collect_lsubrs_called_from(gsubrs)
+            bad_substrings.extend(bad_lsubrs)
+            lsubrs = [[s for s in lsubrarr if s not in bad_lsubrs] for lsubrarr in lsubrs]
 
         for s in bad_substrings:
             s._flatten = True
@@ -844,6 +850,26 @@ class Compreffor(object):
                 subr._program = program
 
         return (gsubrs, lsubrs)
+
+    @staticmethod
+    def collect_lsubrs_called_from(gsubrs):
+        """
+        Collect local subroutines called from any entries in `gsubrs`.
+        This method returns them for after flattening
+        in order to avoid `callsubr` usage in global subroutines.
+        """
+
+        lsubrs = []
+
+        def collect(subr):
+            for _, s in subr._encoding:
+                if not s._global:
+                    lsubrs.append(s)
+                    collect(s)
+
+        for subr in gsubrs:
+            collect(subr)
+        return lsubrs
 
     @staticmethod
     def calc_nesting(subrs):
