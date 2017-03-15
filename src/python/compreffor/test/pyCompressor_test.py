@@ -119,17 +119,17 @@ class TestCffCompressor(unittest.TestCase):
     def test_collect_lsubrs_called_from(self):
         """Test collecting local subrs called from any global subrs"""
 
-        g1 = pyCompressor.CandidateSubr(3, (0, 1))
+        g1 = pyCompressor.CandidateSubr(3, (0, 10))
         g1._global = True
-        g2 = pyCompressor.CandidateSubr(3, (0, 1))
+        g2 = pyCompressor.CandidateSubr(3, (0, 20))
         g2._global = True
-        g3 = pyCompressor.CandidateSubr(3, (0, 1))
+        g3 = pyCompressor.CandidateSubr(3, (0, 30))
         g3._global = True
-        l1 = pyCompressor.CandidateSubr(3, (0, 1))
+        l1 = pyCompressor.CandidateSubr(3, (0, 40))
         l1._global = False
-        l2 = pyCompressor.CandidateSubr(3, (0, 1))
+        l2 = pyCompressor.CandidateSubr(3, (0, 50))
         l2._global = False
-        l3 = pyCompressor.CandidateSubr(3, (0, 1))
+        l3 = pyCompressor.CandidateSubr(3, (0, 60))
         l3._global = False
 
         g1._encoding = [(3, l1)]

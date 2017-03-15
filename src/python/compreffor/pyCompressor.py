@@ -218,6 +218,9 @@ class CandidateSubr(object):
             return NotImplemented
         return not(self == other)
 
+    def __hash__(self):
+        return hash((self.length, self.location))
+
     def __repr__(self):
         return "<CandidateSubr: %d x %dreps>" % (self.length, self.freq)
 
