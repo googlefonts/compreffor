@@ -115,6 +115,32 @@ class TestCffCompressor(unittest.TestCase):
         self.assertEqual(human_size(3565158), "3.4 MB")
         self.assertEqual(human_size(6120328397), "5.7 GB")
 
+    def test_collect_lsubrs_called_from(self):
+        """Test collecting local subrs called from any global subrs"""
+
+        g1 = pyCompressor.CandidateSubr(3, (0, 1))
+        g1._global = True
+        g2 = pyCompressor.CandidateSubr(3, (0, 1))
+        g2._global = True
+        g3 = pyCompressor.CandidateSubr(3, (0, 1))
+        g3._global = True
+        l1 = pyCompressor.CandidateSubr(3, (0, 1))
+        l1._global = False
+        l2 = pyCompressor.CandidateSubr(3, (0, 1))
+        l2._global = False
+        l3 = pyCompressor.CandidateSubr(3, (0, 1))
+        l3._global = False
+
+        g1._encoding = [(3, l1)]
+        g2._encoding = [(3, l2), (6, g3)]
+        g3._encoding = []
+        l1._encoding = []
+        l2._encoding = [(3, l3)]
+        l3._encoding = []
+
+        lsubrs = self.empty_compreffor.collect_lsubrs_called_from([g1, g2, g3])
+        self.assertSetEqual(lsubrs, {l1, l2, l3})
+
     def test_update_program_local(self):
         """Test update_program with only one replacement"""
 
@@ -244,4 +270,3 @@ class TestCffCompressor(unittest.TestCase):
         expected_value = (348, 374, 'rmoveto')
 
         self.assertEqual(self.cand_subr.value(), expected_value)
-
