@@ -14,10 +14,11 @@
 # limitations under the License.
 
 from __future__ import print_function
-import unittest, random, sys
+import unittest
+import random
 from compreffor import pyCompressor
 from compreffor.test.dummy import DummyGlyphSet
-from fontTools.ttLib import TTFont
+
 
 class TestCffCompressor(unittest.TestCase):
 
