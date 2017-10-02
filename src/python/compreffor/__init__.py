@@ -68,7 +68,7 @@ timer = Timer(logger=logging.getLogger(log.name + ".timer"))
 from compreffor import cxxCompressor, pyCompressor
 
 
-__version__ = "0.4.6.dev0"
+__version__ = "0.4.6"
 
 
 def compress(ttFont, method_python=False, **options):
