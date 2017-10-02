@@ -68,6 +68,9 @@ timer = Timer(logger=logging.getLogger(log.name + ".timer"))
 from compreffor import cxxCompressor, pyCompressor
 
 
+__version__ = "0.4.6.dev0"
+
+
 def compress(ttFont, method_python=False, **options):
     """ Subroutinize TTFont instance in-place using the C++ Compreffor.
     If 'method_python' is True, use the slower, pure-Python Compreffor.
