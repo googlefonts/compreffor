@@ -18,7 +18,7 @@ wheel = ['wheel'] if needs_wheel else []
 
 
 # use Cython if available, else try use pre-generated .cpp sources
-cython_min_version = '0.26'
+cython_min_version = '0.27.1'
 try:
     pkg_resources.require("cython >= %s" % cython_min_version)
 except pkg_resources.ResolutionError:
