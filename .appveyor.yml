@@ -1,58 +1,33 @@
 environment:
-  PYPI_USER: "anthrotype"
-  PYPI_PSWD:
+  TOXENV: "py-wheels"
+  TWINE_USERNAME: "anthrotype"
+  TWINE_PASSWORD:
     secure: 3MYRWT1R2pwRunaCYHAqlQ==
   matrix:
     - PYTHON: "C:\\Python27"
-      PYTHON_VERSION: "2.7"
-      PYTHON_ARCH: "32"
-      TOXENV: "py27-mingw32-wheels"
-      TOXPYTHON: "C:\\Python27\\python.exe"
+      TOXENV: "py-mingw32-wheels"
 
     - PYTHON: "C:\\Python35"
-      PYTHON_VERSION: "3.5"
-      PYTHON_ARCH: "32"
-      TOXENV: "py35-wheels"
-      TOXPYTHON: "C:\\Python35\\python.exe"
 
     - PYTHON: "C:\\Python36"
-      PYTHON_VERSION: "3.6"
-      PYTHON_ARCH: "32"
-      TOXENV: "py36-wheels"
-      TOXPYTHON: "C:\\Python36\\python.exe"
+
+    - PYTHON: "C:\\Python37"
 
     - PYTHON: "C:\\Python27-x64"
-      PYTHON_VERSION: "2.7"
-      PYTHON_ARCH: "64"
-      TOXENV: "py27-mingw32-wheels"
-      TOXPYTHON: "C:\\Python27-x64\\python.exe"
+      TOXENV: "py-mingw32-wheels"
 
     - PYTHON: "C:\\Python35-x64"
-      PYTHON_VERSION: "3.5"
-      PYTHON_ARCH: "64"
-      TOXENV: "py35-wheels"
-      TOXPYTHON: "C:\\Python35-x64\\python.exe"
 
     - PYTHON: "C:\\Python36-x64"
-      PYTHON_VERSION: "3.6"
-      PYTHON_ARCH: "64"
-      TOXENV: "py36-wheels"
-      TOXPYTHON: "C:\\Python36-x64\\python.exe"
 
-init:
-  - "ECHO %PYTHON% %PYTHON_VERSION% %PYTHON_ARCH%"
+    - PYTHON: "C:\\Python37-x64"
+
+matrix:
+  fast_finish: true
+
+skip_branch_with_pr: true
 
 install:
-  # If there is a newer build queued for the same PR, cancel this one.
-  # The AppVeyor 'rollout builds' option is supposed to serve the same
-  # purpose but it is problematic because it tends to cancel builds pushed
-  # directly to master instead of just PR builds (or the converse).
-  # credits: JuliaLang developers.
-  - ps: if ($env:APPVEYOR_PULL_REQUEST_NUMBER -and $env:APPVEYOR_BUILD_NUMBER -ne ((Invoke-RestMethod `
-        https://ci.appveyor.com/api/projects/$env:APPVEYOR_ACCOUNT_NAME/$env:APPVEYOR_PROJECT_SLUG/history?recordsNumber=50).builds | `
-        Where-Object pullRequestId -eq $env:APPVEYOR_PULL_REQUEST_NUMBER)[0].buildNumber) { `
-          throw "There are newer queued builds for this pull request, failing early." }
-
   # checkout git sub-modules
   - git submodule update --init --recursive
 
@@ -60,18 +35,18 @@ install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
 
   # check that we have the expected version and architecture for Python
-  - "python --version"
-  - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
+  - python --version
+  - python -c "import struct; print(struct.calcsize('P') * 8)"
 
   # upgrade pip to avoid out-of-date warnings
-  - "pip install --disable-pip-version-check --user --upgrade pip"
-  - "pip --version"
+  - python -m pip install --disable-pip-version-check --upgrade pip
+  - pip --version
 
   # upgrade setuptools and virtualenv
-  - "pip install --upgrade setuptools virtualenv"
+  - pip install --upgrade setuptools virtualenv
 
   # install tox to run test suite in a virtual environment
-  - "pip install -U tox"
+  - pip install --upgrade tox
 
 build: false
 
@@ -96,7 +71,7 @@ on_success:
       if($env:APPVEYOR_REPO_TAG -eq 'true') {
         Write-Output ("Deploying " + $env:APPVEYOR_REPO_TAG_NAME + " to PyPI...")
         pip install --upgrade twine
-        twine upload -u $env:PYPI_USER -p $env:PYPI_PSWD .tox\dist\*.whl
+        twine upload .tox\dist\*.whl
       } else {
         Write-Output "Not deploying as this is not a tagged commit"
       }
