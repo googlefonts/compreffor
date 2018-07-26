@@ -12,22 +12,14 @@ function run_tests {
     # Get absolute path to the pre-compiled wheel
     wheelhouse=$(abspath ../wheelhouse)
     wheel=`ls ${wheelhouse}/compreffor*.whl | head -n 1`
-
-    # select tox environment
-    if [ -n "$IS_OSX" ]; then
-        PYTHON_VERSION=$MB_PYTHON_VERSION
+    if [ ! -e "${wheel}" ]; then
+        echo "error: can't find wheel in ${wheelhouse} folder" 1>&2
+        exit 1
     fi
-    case "${PYTHON_VERSION}" in
-        2.7)
-           TOXENV=py27
-           ;;
-        3.5)
-           TOXENV=py35
-           ;;
-        3.6)
-           TOXENV=py36
-           ;;
-    esac
+
+    # select tox environment based on the current python version
+    # E.g.: '2.7' -> 'py27-cov'
+    TOXENV="py${MB_PYTHON_VERSION//\./}"
 
     # Runs tests on installed wheel
     tox --installpkg $wheel -e $TOXENV
