@@ -139,7 +139,7 @@ with open('README.rst', 'r') as f:
 
 setup_params = dict(
     name="compreffor",
-    version="0.4.7.dev0",
+    version="0.5.0b1",
     description="A CFF subroutinizer for fontTools.",
     long_description=long_description,
     author="Sam Fishman",
