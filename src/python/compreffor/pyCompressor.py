@@ -38,7 +38,6 @@ import logging
 from fontTools import cffLib
 from fontTools.ttLib import TTFont
 from fontTools.misc import psCharStrings
-from fontTools.misc.py23 import range, basestring
 from compreffor import timer
 
 
@@ -78,7 +77,7 @@ def tokenCost(token):
         """Calculate the bytecode size of a T2 Charstring token"""
 
         tp = type(token)
-        if issubclass(tp, basestring):
+        if issubclass(tp, str):
             if token[:8] in ("hintmask", "cntrmask"):
                 return 1 + len(token[9:])
             elif token in SINGLE_BYTE_OPS:

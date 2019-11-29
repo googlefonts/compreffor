@@ -21,7 +21,6 @@ Usage:
 >>> ./gen_data.py /path/to/font.otf /path/to/output
 """
 
-import StringIO
 import array
 import subprocess
 import sys

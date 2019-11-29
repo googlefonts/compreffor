@@ -32,12 +32,12 @@ Usage (python):
 """
 
 import array
+from io import BytesIO
 import struct
 import logging
 from compreffor.pyCompressor import (
     Compreffor, CandidateSubr, tokenCost)
 from compreffor import _compreffor as lib, timer
-from fontTools.misc.py23 import BytesIO
 
 
 log = logging.getLogger(__name__)
