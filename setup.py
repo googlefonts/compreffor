@@ -1,11 +1,9 @@
 #!/usr/bin/env python
-from __future__ import print_function
 from setuptools import setup, find_packages, Extension
 import os
 from distutils.errors import DistutilsSetupError
 from distutils import log
 from distutils.dep_util import newer_group
-from distutils.core import Command
 import pkg_resources
 import platform
 import sys
@@ -35,18 +33,6 @@ class custom_build_ext(build_ext):
     """ Custom 'build_ext' command which allows to pass compiler-specific
     'extra_compile_args', 'define_macros' and 'undef_macros' options.
     """
-
-    def finalize_options(self):
-        build_ext.finalize_options(self)
-        if self.compiler is None:
-            # we use this variable with tox to build using GCC on Windows.
-            # https://bitbucket.org/hpk42/tox/issues/274/specify-compiler
-            self.compiler = os.environ.get("DISTUTILS_COMPILER", None)
-        if self.compiler == "mingw32":
-            # workaround for virtualenv changing order of libary_dirs on
-            # Windows, which makes gcc fail to link with the correct libpython
-            # https://github.com/mingwpy/mingwpy.github.io/issues/31
-            self.library_dirs.insert(0, os.path.join(sys.exec_prefix, 'libs'))
 
     def build_extension(self, ext):
         sources = ext.sources
@@ -143,34 +129,9 @@ extensions = [
                  if platform.system() == "Darwin" else []),
             "msvc": ["/EHsc", "/Zi"],
         },
-        define_macros={
-            # On Windows Python 2.7, pyconfig.h defines "hypot" as "_hypot",
-            # This clashes with GCC's cmath, and causes compilation errors when
-            # building under MinGW: http://bugs.python.org/issue11566
-            "mingw32": [("_hypot", "hypot")],
-        },
         language="c++",
     ),
 ]
-
-
-class PassCommand(Command):
-    """ This is used with Travis `dpl` tool so that it skips creating wheel
-    packages, and simply uploads to PyPI the ones that have been previously
-    built inside the manylinux1 docker container.
-    """
-
-    description = "do nothing"
-    user_options = []
-
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        pass
 
 
 with open('README.rst', 'r') as f:
@@ -188,15 +149,15 @@ setup_params = dict(
     ext_modules=extensions,
     cmdclass={
         'build_ext': custom_build_ext,
-        'pass': PassCommand,
     },
     setup_requires=pytest_runner + wheel,
     tests_require=[
         'pytest>=2.8',
     ],
     install_requires=[
-        "fonttools>=3.1",
+        "fonttools>=4",
     ],
+    python_requires=">=3.6",
     entry_points={
         'console_scripts': [
             "compreffor = compreffor.__main__:main",
@@ -210,7 +171,6 @@ setup_params = dict(
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
         "Programming Language :: Python",
-        "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 3",
         "Topic :: Multimedia :: Graphics",
         "Topic :: Multimedia :: Graphics :: Graphics Conversion",
