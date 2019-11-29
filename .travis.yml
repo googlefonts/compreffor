@@ -40,9 +40,13 @@ script:
 - install_run $PLAT
 after_success:
 - |
-  if [ -n "$TRAVIS_TAG" ] && [ "$BUILD_SDIST" == true ] && [ "$TRAVIS_REPO_SLUG" == "googlefonts/compreffor" ]; then
+  if [ -n "$TRAVIS_TAG" ] && [ "$TRAVIS_REPO_SLUG" == "googlefonts/compreffor" ]; then
     pip install --upgrade pip
-    pip install --upgrade cython setuptools twine
-    python setup.py sdist
-    twine upload wheelhouse/*.whl dist/*.zip
+    pip install --upgrade twine
+    twine upload wheelhouse/*.whl
+    if [ "$BUILD_SDIST" == true ]; then
+      pip install --upgrade cython setuptools
+      python setup.py sdist
+      twine upload dist/*.zip
+    fi
   fi
