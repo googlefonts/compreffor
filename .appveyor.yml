@@ -2,25 +2,19 @@ environment:
   TOXENV: "py-wheels"
   TWINE_USERNAME: "anthrotype"
   TWINE_PASSWORD:
-    secure: 3MYRWT1R2pwRunaCYHAqlQ==
+    secure: 9L/DdqoIILlN7qCh0lotvA==
   matrix:
-    - PYTHON: "C:\\Python27"
-      TOXENV: "py-mingw32-wheels"
-
-    - PYTHON: "C:\\Python35"
-
     - PYTHON: "C:\\Python36"
 
     - PYTHON: "C:\\Python37"
 
-    - PYTHON: "C:\\Python27-x64"
-      TOXENV: "py-mingw32-wheels"
-
-    - PYTHON: "C:\\Python35-x64"
+    - PYTHON: "C:\\Python38"
 
     - PYTHON: "C:\\Python36-x64"
 
     - PYTHON: "C:\\Python37-x64"
+
+    - PYTHON: "C:\\Python38-x64"
 
 matrix:
   fast_finish: true
@@ -75,13 +69,3 @@ on_success:
       } else {
         Write-Output "Not deploying as this is not a tagged commit"
       }
-
-deploy:
-  # Deploy wheels on tags to GitHub Releases
-  - provider: GitHub
-    auth_token:
-      secure: v7og3VSU6oko1daRt5IhhUhZwLWtb/MozxvcjmTmxVXK8etcOlCC1KkOfMyliFri
-    draft: false
-    prerelease: false
-    on:
-      appveyor_repo_tag: true

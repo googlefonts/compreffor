@@ -1,118 +1,48 @@
 env:
   global:
-    # directory containing the project source
-    - REPO_DIR=.
-    # pip dependencies to _build_ project
-    # - BUILD_DEPENDS="..."
-    # pip dependencies to _test_ project
-    - TEST_DEPENDS="tox"
-    - PLAT=x86_64
-    - UNICODE_WIDTH=32
-
-language: python
-# The travis Python version is unrelated to the version we build and test
-# with.  This is set with the MB_PYTHON_VERSION variable.
-python: 3.5
-sudo: required
-dist: trusty
+  - REPO_DIR=.
+  - TEST_DEPENDS="tox"
+  - PLAT=x86_64
+  - UNICODE_WIDTH=32
+  - TWINE_USERNAME="anthrotype"
+  - secure: DNomOm8Gxq0py+fkmTmcQE7bo0WlpGQXL5xnwIHD3CnaPWTRcnbjCHLwxX1IHSXgLsNgSzV3cs4YtwoHdaWbBCozDsqSyG16pvSlCkTEDDz62vWHzlghKjbsY8TCzpc0nK4fJUv1/rUI+CjMtt8rsUh995oDQg6fruArZhuGAmLfdQIRelUpkqTME9jsMav6DzL/W9ZfnZa2srzBYXIrNTPlsHpWdLOaAkhRjtjujguSHsZztwcW+qAWhJYbtAoR6/YF5aB+IxfT/z2G6Zyq/cEwSgXeh1S95FHWE/6Eieh9ZIFYGctlSGKMH3kFGkMZ65UH2qI8I4d0UhSBp+RgA8ScmIycJC53ybJYpB0BHEDmzfk8+VCpTvXvZOyqsJcV/1wmCJV4vdMgAq2zSUOs/qlT/cpfdBvts/GW3FCA2CI/pu1pDtlY2DUS/35nAEaaGTZKoW0Rc1c5tnqMM/LRRo6jQ23FI/J2sdwPQUldlKfncZxSP9SIKm3r7UhJYvFAVurM/7jqM9oS1hI0bzP4fhHvGvD4L6auJNw/HaKscsWpXlFEXnQaTLRhu/9vscveGCyuCSBK3+ITUys/MDu1JD+2J5231zpwAB9dBeGrQ8WRsY+52cWfz13GCefTQ29bmxYOxpii+Fmb44pBvq8NEGghsV6sU7AP0Yo0KLMXXa8=
+language: generic
+dist: xenial
 services: docker
-
 matrix:
-  exclude:
-    # Exclude the default Python 3.5 build
-    - python: 3.5
   include:
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=2.7
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=2.7
-        - UNICODE_WIDTH=16
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=2.7
-        - PLAT=i686
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=2.7
-        - PLAT=i686
-        - UNICODE_WIDTH=16
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=3.5
-        - BUILD_SDIST=true
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=3.5
-        - PLAT=i686
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=3.6
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=3.6
-        - PLAT=i686
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=3.7
-    - os: linux
-      env:
-        - MB_PYTHON_VERSION=3.7
-        - PLAT=i686
-    - os: osx
-      language: generic
-      env:
-        - MB_PYTHON_VERSION=2.7
-    - os: osx
-      language: generic
-      env:
-        - MB_PYTHON_VERSION=3.5
-    - os: osx
-      language: generic
-      env:
-        - MB_PYTHON_VERSION=3.6
-    - os: osx
-      language: generic
-      env:
-        - MB_PYTHON_VERSION=3.7
-
+  - os: linux
+    env:
+    - MB_PYTHON_VERSION=3.6
+  - os: linux
+    env:
+    - MB_PYTHON_VERSION=3.7
+    - BUILD_SDIST=true
+  - os: linux
+    env:
+    - MB_PYTHON_VERSION=3.8
+  - os: osx
+    env:
+    - MB_PYTHON_VERSION=3.6
+  - os: osx
+    env:
+    - MB_PYTHON_VERSION=3.7
+  - os: osx
+    env:
+    - MB_PYTHON_VERSION=3.8
 before_install:
-  - source multibuild/common_utils.sh
-  - source multibuild/travis_steps.sh
-  - before_install
-
+- source multibuild/common_utils.sh
+- source multibuild/travis_steps.sh
+- before_install
 install:
-  - build_wheel $REPO_DIR $PLAT
-
+- build_wheel $REPO_DIR $PLAT
 script:
-  - install_run $PLAT
-
+- install_run $PLAT
 after_success:
-  # if tagged, create the source distribution for the deploy stage
-  - if [ -n "$TRAVIS_TAG" ] && [ "$BUILD_SDIST" == true ]; then pip install cython; pip install -U setuptools; python setup.py sdist; fi
-  # copy compiled wheels to dist/ where Travis `dpl` tool can find them and upload to PyPI
-  - if [ -n "$TRAVIS_TAG" ]; then mkdir -p dist; cp wheelhouse/*.whl dist; fi
-
-deploy:
-  # Deploy on tags to GitHub Releases
-  - provider: releases
-    api_key:
-      secure: DjEjgnbxchBCUB2DFH0jtSee7v3vCmWXCkQrkYyULAlZkEKcLDRVRZoDg1BW/q2aCuAz8vnG4lgVbOwWhT8JTSVtbuVnT2W2chwSmBAyhtC3QVxdMQdIEVjJvU3Ci6QnBQiP9ibi4vjua8ORjWD/CoNm5v/ME0NJjeidDhPJdAg3HAvj6JnocI5alL4LTrmoDRL9ghuAw23uHFcGZ89QOF6cEs5vlD4EJ+zIMssyR3kQsY6bi96tQuo4vpfo+Gd+ygT5k5RrWkuj5Fm7A5yq0wkgxsLdbuwlFtnFl/yahG8c2bWy5iwkEcvPlsaHs9+nwR+hFzqeGDUPyNPHYTPNVyirDk+MNoXYoC08VkzUK3HNC3N/MmZxebG/aEqK0CfJopVzHdlgMQ7Tm00fYzrhazlijrRmttU5oOnuF1glUnScaR0y7zsv3oNg/4z043BbAVclcQvvVu8Fw9aNIjusYHo1MLBN+nHbZBjkIUvSlYoj7E/2kDPsIFt8E8On15a/SIrmXj1DfURnHOYeBhl059h+TTpo2aq4KAn5DnpAcwZHcxgIKdeIriCC6GCYhq3yuGNzusuCxOeEAKU8XijgST2BB2Z93OiDAPNhTJ4SjzvRYTvS15wBGviVhWmbElZlqTZFPaOP8kI+JPnYaNvzdIKBaj5EG1z3ym8XjpTkqLc=
-    file_glob: true
-    file: "dist/*"
-    skip_cleanup: true
-    on:
-      repo: googlei18n/compreffor
-      tags: true
-  # Deploy on tags to PyPI
-  - provider: pypi
-    server: https://upload.pypi.org/legacy/
-    on:
-      repo: googlei18n/compreffor
-      tags: true
-    user: anthrotype
-    password:
-      secure: O7n0blUsuJRHOVMRnIntntwQfpwvrUdDJOYU6MThNAP7VmoZCClHcrRa72zYy/rloEfvLoftdqRgWMvany5rETfb5l//zlKlRxYUnE8UMrRm/b6Q10OWH1PDuLDZ7o1Q97gFaECfoW8s1fygKF41RxiwBlFM9JdWgIaT3S5PNKO16sj50oFs6/Xd4MOeYhVPwj3SBL7Rn0cs2cLXvcUfMiWJ0czl90p9vQpjr5y9OzG87/kSr5Xo7CxoSJg0OHoQNPoGAAuSE6e/Lsg9fVSmqmYcYS/YsCuWb/3UiWrW34JPh5IasK8N0FBJ18j4KPDI5hywKiF8aqSFcvC0QvpBcnx/gSQtOObmnayHnyaJhfnJUcBB2kF0FSO+x4dZqiqtoy08IuIJMiYAgxFtVXXiIGFS4esFaJLQq4n4KhpXXEVn4LWpiBTt5oAvinygttMO/BlirPaaSmgYOf0tZwzQZiv79i6Q+ag6Y5/njYLfZKi23I9YC8qtZUpBoaSpgGeUki1KAChM7EaU/sFQEAEdGSxCIjPzZtE32FokIugZe/q/ov5hINLpy9W0Cb9M7Ma7EqAFFR8VabY6cYupJgDsSwcIgNQZD2CgXe2J83XmNMvkbULuRtGktiXNtNp6eL1OTYLvb/fS+Dp9Nw0VNuBNJFcbHCVN1h0+yfA9mAFTYSI=
-    skip_cleanup: true
-    distributions: pass
+- |
+  if [ -n "$TRAVIS_TAG" ] && [ "$BUILD_SDIST" == true ] && [ "$TRAVIS_REPO_SLUG" == "googlefonts/compreffor" ]; then
+    pip install --upgrade pip
+    pip install --upgrade cython setuptools twine
+    python setup.py sdist
+    twine upload wheelhouse/*.whl dist/*.zip
+  fi
