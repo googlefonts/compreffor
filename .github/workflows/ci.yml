@@ -96,12 +96,10 @@ jobs:
         venv\Scripts\activate
         pip wheel --no-deps -w wheelhouse .
     - name: Run the tests
-      shell: cmd
       run: |
         venv\Scripts\activate
-        dir /s /b wheelhouse\${{ env.PROJECT_NAME }}*.whl > wheel.pth
-        set /p WHEEL_PATH=<wheel.pth
-        tox --installpkg %WHEEL_PATH% -e py
+        Get-ChildItem wheelhouse\${{ env.PROJECT_NAME }}*.whl -OutVariable WHEEL_PATH
+        tox --installpkg $WHEEL_PATH -e py
     - uses: actions/upload-artifact@v2
       with:
         name: ${{ env.PROJECT_NAME }}-py${{ matrix.python-version }}-win-${{ matrix.platform }}
