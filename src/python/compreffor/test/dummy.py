@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import collections
+import collections.abc
 
-class DummyGlyphSet(collections.MutableMapping):
+
+class DummyGlyphSet(collections.abc.MutableMapping):
     """Behaves like a glyphset for testing purposes"""
 
     def __init__(self, *args, **kwargs):
