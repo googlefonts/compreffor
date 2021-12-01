@@ -139,9 +139,10 @@ with open('README.rst', 'r') as f:
 
 setup_params = dict(
     name="compreffor",
-    version="0.5.2.dev0",
+    use_scm_version={"write_to": "src/python/compreffor/_version.py"},
     description="A CFF subroutinizer for fontTools.",
     long_description=long_description,
+    long_description_content_type="text/x-rst",
     author="Sam Fishman",
     license="Apache 2.0",
     package_dir={'': 'src/python'},
@@ -150,7 +151,9 @@ setup_params = dict(
     cmdclass={
         'build_ext': custom_build_ext,
     },
-    setup_requires=pytest_runner + wheel,
+    setup_requires=(
+        ["setuptools_scm", "setuptools_git_ls_files"] + pytest_runner + wheel
+    ),
     tests_require=[
         'pytest>=2.8',
     ],
