@@ -46,13 +46,13 @@ jobs:
         os: [macos-latest, windows-latest]
         arch: [auto64]
         build: ["*"]
-        skip: ["pp*"]
+        skip: ["cp36-* pp*"]
         include:
-          # the manylinux1 docker images only contain from python3.6 to 3.9
+          # the manylinux1 docker images only contain from python3.7 to 3.9
           - os: ubuntu-latest
             type: manylinux1
             arch: auto64
-            build: "cp{36,37,38,39}-manylinux*"
+            build: "cp{37,38,39}-manylinux*"
             CIBW_MANYLINUX_X86_64_IMAGE: manylinux1
             CIBW_MANYLINUX_I686_IMAGE: manylinux1
           # the manylinux2010 image also contains python 3.10
@@ -66,12 +66,12 @@ jobs:
           - os: macos-latest
             arch: universal2
             build: "*"
-            skip: "pp*"
+            skip: "cp36-* pp*"
 
           - os: windows-latest
             arch: auto32
             build: "*"
-            skip: "pp*"
+            skip: "cp36-* pp*"
     steps:
     - uses: actions/checkout@v2
       with:
@@ -101,7 +101,7 @@ jobs:
     strategy:
       matrix:
         # aarch64 uses qemu so it's slow, build each py version in parallel jobs
-        python: [36, 37, 38, 39, 310]
+        python: [37, 38, 39, 310]
         arch: [aarch64]
     steps:
     - uses: actions/checkout@v2
