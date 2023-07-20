@@ -4,7 +4,7 @@ requires = [
     "wheel",
     "setuptools_scm",
     "setuptools_git_ls_files",
-    "cython",
+    "cython<3",
 ]
 
 build-backend = "setuptools.build_meta"
