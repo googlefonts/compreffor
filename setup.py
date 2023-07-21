@@ -26,7 +26,7 @@ except pkg_resources.ResolutionError:
 else:
     with_cython = True
     print('Development mode: Compiling Cython modules from .pyx sources.')
-    from Cython.Distutils import build_ext
+    from Cython.Distutils.old_build_ext import old_build_ext as build_ext
 
 
 class custom_build_ext(build_ext):
