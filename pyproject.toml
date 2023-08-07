@@ -1,10 +1,8 @@
 [build-system]
 requires = [
     "setuptools",
-    "wheel",
     "setuptools_scm",
-    "setuptools_git_ls_files",
     "cython",
 ]
-
-build-backend = "setuptools.build_meta"
+build-backend = "backend"
+backend-path = ["_custom_build"]

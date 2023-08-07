@@ -11,8 +11,6 @@ import sys
 
 needs_pytest = {'pytest', 'test'}.intersection(sys.argv)
 pytest_runner = ['pytest_runner'] if needs_pytest else []
-needs_wheel = {'bdist_wheel'}.intersection(sys.argv)
-wheel = ['wheel'] if needs_wheel else []
 
 
 # use Cython if available, else try use pre-generated .cpp sources
@@ -152,7 +150,7 @@ setup_params = dict(
         'build_ext': custom_build_ext,
     },
     setup_requires=(
-        ["setuptools_scm", "setuptools_git_ls_files"] + pytest_runner + wheel
+        pytest_runner
     ),
     tests_require=[
         'pytest>=2.8',
