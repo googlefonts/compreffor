@@ -46,39 +46,39 @@ jobs:
         os: [macos-latest, windows-latest]
         arch: [auto64]
         build: ["*"]
-        skip: ["cp36-* pp*"]
+        skip: ["cp36-* cp37-* pp*"]
         include:
-          # the manylinux1 docker images only contain from python3.7 to 3.9
+          # the manylinux1 docker images only contain python3.8 and 3.9
           - os: ubuntu-latest
             type: manylinux1
             arch: auto64
-            build: "cp{37,38,39}-manylinux*"
+            build: "cp{38,39}-manylinux*"
             CIBW_MANYLINUX_X86_64_IMAGE: manylinux1
             CIBW_MANYLINUX_I686_IMAGE: manylinux1
-          # the manylinux2010 image also contains CPython 3.10, and pypy-3.7 and 3.8
+          # the manylinux2010 image also contains CPython 3.10, and pypy-3.8
           - os: ubuntu-latest
             arch: auto64
             type: manylinux2010
-            build: "pp37-manylinux* pp38-manylinux* cp310-manylinux*"
+            build: "pp38-manylinux* cp310-manylinux*"
             CIBW_MANYLINUX_X86_64_IMAGE: manylinux2010
             CIBW_MANYLINUX_I686_IMAGE: manylinux2010
-          # the manylinux2014 image contains pypy-3.9 and CPython 3.11
+          # the manylinux2014 image contains pypy-3.9 and CPython 3.11 and 3.12
           - os: ubuntu-latest
             arch: auto64
             type: manylinux2014
-            build: "pp39-manylinux* cp311-manylinux*"
+            build: "pp39-manylinux* cp311-manylinux* cp312-manylinux*"
             CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
             CIBW_MANYLINUX_I686_IMAGE: manylinux2014
 
           - os: macos-latest
             arch: universal2
             build: "*"
-            skip: "cp36-* pp*"
+            skip: "cp36-* cp37-* pp*"
 
           - os: windows-latest
             arch: auto32
             build: "*"
-            skip: "cp36-* pp*"
+            skip: "cp36-* cp37-* pp*"
     steps:
     - uses: actions/checkout@v2
       with:
@@ -108,7 +108,7 @@ jobs:
     strategy:
       matrix:
         # aarch64 uses qemu so it's slow, build each py version in parallel jobs
-        python: [37, 38, 39, 310, 311]
+        python: [38, 39, 310, 311, 312]
         arch: [aarch64]
     steps:
     - uses: actions/checkout@v2

@@ -160,7 +160,7 @@ setup_params = dict(
     install_requires=[
         "fonttools>=4",
     ],
-    python_requires=">=3.6",
+    python_requires=">=3.8",
     entry_points={
         'console_scripts': [
             "compreffor = compreffor.__main__:main",
