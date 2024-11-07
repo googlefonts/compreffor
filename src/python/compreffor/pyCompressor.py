@@ -15,7 +15,7 @@
 # limitations under the License.
 
 """
-Tool to subroutinize a CFF OpenType font.
+Tool to subroutinize a CFF2 OpenType font.
 
 Usage (command line):
 >> ./pyCompressor.py /path/to/font.otf
@@ -431,7 +431,7 @@ class Compreffor(object):
         Initialize the compressor.
 
         Arguments:
-        font -- the TTFont to compress, must be a CFF font
+        font -- the TTFont to compress, must be a CFF2 font
         nrounds -- specifies the number of rounds to run
         max_subrs -- specify the limit on the number of subrs in an INDEX
         chunk_ratio -- sets the POOL_CHUNKRATIO parameter
@@ -441,8 +441,8 @@ class Compreffor(object):
         """
 
         if isinstance(font, TTFont):
-            assert "CFF " in font
-            assert len(font["CFF "].cff.topDictIndex) == 1
+            assert "CFF2" in font
+            assert len(font["CFF2"].cff.topDictIndex) == 1
             self.font = font
         else:
             log.warning("non-TTFont given to Compreffor")
@@ -450,7 +450,7 @@ class Compreffor(object):
 
         if chunk_ratio is not None:
             self.POOL_CHUNKRATIO = chunk_ratio
-        elif font and (len(font["CFF "].cff.topDictIndex[0].charset) <
+        elif font and (len(font["CFF2"].cff.topDictIndex[0].charset) <
                        self.CHUNK_CHARSET_CUTOFF):
             self.POOL_CHUNKRATIO = self.LATIN_POOL_CHUNKRATIO
         if nrounds is not None:
@@ -472,7 +472,7 @@ class Compreffor(object):
     def compress(self):
         """Compress the provided font using the iterative method"""
 
-        top_dict = self.font["CFF "].cff.topDictIndex[0]
+        top_dict = self.font["CFF2"].cff.topDictIndex[0]
 
         multi_font = hasattr(top_dict, "FDArray")
 

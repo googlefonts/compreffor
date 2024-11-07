@@ -59,7 +59,7 @@ def check_call_depth(compressed_file):
 
     f = ttLib.TTFont(compressed_file)
 
-    return check_cff_call_depth(f["CFF "].cff)
+    return check_cff_call_depth(f["CFF2"].cff)
 
 
 def check_cff_call_depth(cff):
