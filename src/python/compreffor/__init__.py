@@ -15,7 +15,7 @@
 
 """
 ==== TTX/FontTools Compreffor ====
-This module automatically subroutines the CFF table in
+This module automatically subroutines the CFF2 table in
 a TTFont object, for the purposes of compressing the
 outputted font file. In addition to providing a Python
 interface, this tool can be used on the command line.
@@ -90,7 +90,7 @@ def compress(ttFont, method_python=False, **options):
 
 
 def decompress(ttFont, **kwargs):
-    """ Use the FontTools Subsetter to desubroutinize the font's CFF table.
+    """ Use the FontTools Subsetter to desubroutinize the font's CFF2 table.
     Any keyword arguments are passed on as options to the Subsetter.
     Skip if the font contains no subroutines.
     """
@@ -102,7 +102,7 @@ def decompress(ttFont, **kwargs):
 
     # The FontTools subsetter modifies many tables by default; here
     # we only want to desubroutinize, so we run the subsetter on a
-    # temporary copy and extract the resulting CFF table from it
+    # temporary copy and extract the resulting CFF2 table from it
     make_temp = kwargs.pop('make_temp', True)
     if make_temp:
         from io import BytesIO
@@ -124,19 +124,19 @@ def decompress(ttFont, **kwargs):
     subsetter.subset(tmpfont)
 
     if make_temp:
-        # copy modified CFF table to original font
-        data = tmpfont['CFF '].compile(tmpfont)
-        table = newTable('CFF ')
+        # copy modified CFF2 table to original font
+        data = tmpfont['CFF2'].compile(tmpfont)
+        table = newTable('CFF2')
         table.decompile(data, ttFont)
-        ttFont['CFF '] = table
+        ttFont['CFF2'] = table
         tmpfont.close()
 
 
 def has_subrs(ttFont):
-    """ Return True if the font's CFF table contains any subroutines. """
-    if 'CFF ' not in ttFont:
-        raise ValueError("Invalid font: no 'CFF ' table found")
-    td = ttFont['CFF '].cff.topDictIndex[0]
+    """ Return True if the font's CFF2 table contains any subroutines. """
+    if 'CFF2' not in ttFont:
+        raise ValueError("Invalid font: no 'CFF2' table found")
+    td = ttFont['CFF2'].cff.topDictIndex[0]
     all_subrs = [td.GlobalSubrs]
     if hasattr(td, 'FDArray'):
         all_subrs.extend(fd.Private.Subrs for fd in td.FDArray
