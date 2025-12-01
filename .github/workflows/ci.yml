@@ -49,7 +49,7 @@ jobs:
         os: [macos-15-intel, windows-latest]
         arch: [auto64]
         build: ["*"]
-        skip: ["cp38-* cp39-* pp*"]
+        skip: ["cp38-* cp39-* cp314t-* pp*"]
         include:
           # manylinux2014 for x86_64
           - os: ubuntu-latest
@@ -67,12 +67,12 @@ jobs:
           - os: macos-latest
             arch: universal2
             build: "*"
-            skip: "cp38-* cp39-* pp*"
+            skip: "cp38-* cp39-* cp314t-* pp*"
 
           - os: windows-latest
             arch: auto32
             build: "*"
-            skip: "cp38-* cp39-* pp*"
+            skip: "cp38-* cp39-* cp314t-* pp*"
     steps:
     - uses: actions/checkout@v6
       with:
