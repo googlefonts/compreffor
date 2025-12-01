@@ -10,6 +10,7 @@ on:
 env:
   CIBW_TEST_REQUIRES: "pytest -rrequirements.txt"
   CIBW_TEST_COMMAND: "pytest --pyargs compreffor"
+  CIBW_ENABLE: "pypy"
 
 jobs:
 
@@ -17,20 +18,20 @@ jobs:
     name: Build Source Distribution
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         submodules: recursive
         # setuptools_scm won't work with shallow clone; fetch all history
         fetch-depth: 0
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: "3.x"
     - name: Build sdist
       run: pipx run build --sdist
     - name: Check metadata
       run: pipx run twine check dist/*.tar.gz
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         path: dist/*.tar.gz
         name: sdist
@@ -44,50 +45,41 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-13 is needed to build x86_64 wheels for Mac (macos-14+ is arm64)
-        os: [macos-13, windows-latest]
+        # macos-15-intel for x86_64 wheels, macos-latest (arm64) handled in include
+        os: [macos-15-intel, windows-latest]
         arch: [auto64]
         build: ["*"]
-        skip: ["cp36-* cp37-* pp*"]
+        skip: ["cp38-* cp39-* cp314t-* pp*"]
         include:
-          # the manylinux1 docker images only contain python3.8 and 3.9
-          - os: ubuntu-latest
-            type: manylinux1
-            arch: auto64
-            build: "cp{38,39}-manylinux*"
-            CIBW_MANYLINUX_X86_64_IMAGE: manylinux1
-            CIBW_MANYLINUX_I686_IMAGE: manylinux1
-          # the manylinux2010 image also contains CPython 3.10, and pypy-3.8
-          - os: ubuntu-latest
-            arch: auto64
-            type: manylinux2010
-            build: "pp38-manylinux* cp310-manylinux*"
-            CIBW_MANYLINUX_X86_64_IMAGE: manylinux2010
-            CIBW_MANYLINUX_I686_IMAGE: manylinux2010
-          # the manylinux2014 image contains pypy-3.9 and CPython 3.11 and 3.12
+          # manylinux2014 for x86_64
           - os: ubuntu-latest
             arch: auto64
             type: manylinux2014
-            build: "pp39-manylinux* cp311-manylinux* cp312-manylinux* cp313-manylinux*"
+            build: "cp310-manylinux* cp311-manylinux* cp312-manylinux* cp313-manylinux* cp314-manylinux* pp311-manylinux*"
             CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
             CIBW_MANYLINUX_I686_IMAGE: manylinux2014
+          # native arm64 Linux runner
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            type: manylinux2014
+            build: "cp310-manylinux* cp311-manylinux* cp312-manylinux* cp313-manylinux* cp314-manylinux* pp311-manylinux*"
 
           - os: macos-latest
             arch: universal2
             build: "*"
-            skip: "cp36-* cp37-* pp*"
+            skip: "cp38-* cp39-* cp314t-* pp*"
 
           - os: windows-latest
             arch: auto32
             build: "*"
-            skip: "cp36-* cp37-* pp*"
+            skip: "cp38-* cp39-* cp314t-* pp*"
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         submodules: recursive
         fetch-depth: 0
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: "3.x"
     - name: Install dependencies
@@ -100,49 +92,24 @@ jobs:
         CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.CIBW_MANYLINUX_X86_64_IMAGE }}
         CIBW_ARCHS: ${{ matrix.arch }}
         CIBW_SKIP: ${{ matrix.skip }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v5
       with:
         path: wheelhouse/*.whl
         name: wheels-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.type }}
-
-  build_arch_wheels:
-    name: py${{ matrix.python }} on ${{ matrix.arch }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # aarch64 uses qemu so it's slow, build each py version in parallel jobs
-        python: [38, 39, 310, 311, 312, 313]
-        arch: [aarch64]
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        fetch-depth: 0
-    - uses: docker/setup-qemu-action@v3.2.0
-      with:
-        platforms: all
-    - name: Install dependencies
-      run: pip install cibuildwheel
-    - name: Build Wheels
-      run: python -m cibuildwheel --output-dir wheelhouse .
-      env:
-        CIBW_BUILD: cp${{ matrix.python }}-manylinux*
-        CIBW_ARCHS: ${{ matrix.arch }}
-    - uses: actions/upload-artifact@v4
-      with:
-        path: wheelhouse/*.whl
-        name: wheels-${{ matrix.python }}-linux-${{ matrix.arch }}
 
   deploy:
     name: Upload if tagged commit
     if: startsWith(github.ref, 'refs/tags/')
     # but only if all build jobs completed successfully
-    needs: [build_wheels, build_arch_wheels, build_sdist]
+    needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v4
+    - uses: actions/checkout@v6
+    - uses: actions/download-artifact@v6
       with:
         path: dist
         merge-multiple: true
@@ -178,7 +145,4 @@ jobs:
         draft: false
         prerelease: ${{ env.IS_PRERELEASE }}
 
-    - uses: pypa/gh-action-pypi-publish@v1.10.3
-      with:
-        user: __token__
-        password: ${{ secrets.PYPI_PASSWORD }}
+    - uses: pypa/gh-action-pypi-publish@v1.13.0

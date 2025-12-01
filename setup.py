@@ -4,29 +4,9 @@ import os
 from distutils.errors import DistutilsSetupError
 from distutils import log
 from distutils.dep_util import newer_group
-import pkg_resources
 import platform
-import sys
 
-
-needs_pytest = {'pytest', 'test'}.intersection(sys.argv)
-pytest_runner = ['pytest_runner'] if needs_pytest else []
-needs_wheel = {'bdist_wheel'}.intersection(sys.argv)
-wheel = ['wheel'] if needs_wheel else []
-
-
-# use Cython if available, else try use pre-generated .cpp sources
-cython_min_version = '3.0.11'
-try:
-    pkg_resources.require("cython >= %s" % cython_min_version)
-except pkg_resources.ResolutionError:
-    with_cython = False
-    print('Distribution mode: Compiling from Cython-generated .cpp sources.')
-    from setuptools.command.build_ext import build_ext
-else:
-    with_cython = True
-    print('Development mode: Compiling Cython modules from .pyx sources.')
-    from Cython.Distutils.old_build_ext import old_build_ext as build_ext
+from Cython.Distutils.old_build_ext import old_build_ext as build_ext
 
 
 class custom_build_ext(build_ext):
@@ -115,8 +95,7 @@ extensions = [
     Extension(
         "compreffor._compreffor",
         sources=[
-            os.path.join('src', 'cython', (
-                '_compreffor' + ('.pyx' if with_cython else '.cpp'))),
+            os.path.join('src', 'cython', '_compreffor.pyx'),
             os.path.join('src', 'cxx', "cffCompressor.cc"),
         ],
         depends=[os.path.join('src', 'cxx', 'cffCompressor.h')],
@@ -151,16 +130,10 @@ setup_params = dict(
     cmdclass={
         'build_ext': custom_build_ext,
     },
-    setup_requires=(
-        ["setuptools_scm", "setuptools_git_ls_files"] + pytest_runner + wheel
-    ),
-    tests_require=[
-        'pytest>=2.8',
-    ],
     install_requires=[
         "fonttools>=4",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10",
     entry_points={
         'console_scripts': [
             "compreffor = compreffor.__main__:main",
