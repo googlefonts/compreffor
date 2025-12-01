@@ -45,8 +45,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-13 is needed to build x86_64 wheels for Mac (macos-14+ is arm64)
-        os: [macos-13, windows-latest]
+        # macos-15-intel for x86_64 wheels, macos-latest (arm64) handled in include
+        os: [macos-15-intel, windows-latest]
         arch: [auto64]
         build: ["*"]
         skip: ["cp38-* cp39-* pp*"]
