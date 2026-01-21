@@ -36,7 +36,7 @@ def parse_arguments(args=None):
                         help="limit to the number of subroutines per INDEX "
                         " (default: 65533)")
     parser.add_argument('--generate-cff', action='store_true',
-                        help="Also save binary CFF table data as {INPUT}.cff")
+                        help="Also save binary CFF2 table data as {INPUT}.cff")
     parser.add_argument('--py', dest="method_python", action='store_true',
                         help="Use pure Python method, instead of C++ extension")
     py_meth_group = parser.add_argument_group("options for pure Python method")
@@ -116,8 +116,8 @@ def main(args=None):
     if generate_cff:
         cff_file = os.path.splitext(outfile)[0] + ".cff"
         with open(cff_file, 'wb') as f:
-            font['CFF '].cff.compile(f, None)
-        log.info("Saved CFF data to '%s'" % os.path.basename(cff_file))
+            font['CFF2'].cff.compile(f, None)
+        log.info("Saved CFF2 data to '%s'" % os.path.basename(cff_file))
 
     if check:
         log.info("Checking compression integrity and call depth")

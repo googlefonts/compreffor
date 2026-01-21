@@ -15,7 +15,7 @@
 # limitations under the License.
 
 """
-Tool to subroutinize a CFF OpenType font. Backed by a C++ binary.
+Tool to subroutinize a CFF2 OpenType font. Backed by a C++ binary.
 
 This file is a bootstrap for the C++ edition of the FontTools compreffor.
 It prepares the input data for the extension and reads back in the results,
@@ -193,9 +193,9 @@ def compreff(font, nrounds=None, max_subrs=None):
     """Main function that compresses `font`, a TTFont object,
     in place.
     """
-    assert len(font['CFF '].cff.topDictIndex) == 1
+    assert len(font['CFF2'].cff.topDictIndex) == 1
 
-    td = font['CFF '].cff.topDictIndex[0]
+    td = font['CFF2'].cff.topDictIndex[0]
 
     if nrounds is None:
         nrounds = Compreffor.NROUNDS
