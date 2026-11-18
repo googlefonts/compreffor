@@ -116,7 +116,7 @@ def main(args=None):
     if generate_cff:
         cff_file = os.path.splitext(outfile)[0] + ".cff"
         with open(cff_file, 'wb') as f:
-            font['CFF '].cff.compile(f, None)
+            f.write(font.getTableData('CFF '))
         log.info("Saved CFF data to '%s'" % os.path.basename(cff_file))
 
     if check:
